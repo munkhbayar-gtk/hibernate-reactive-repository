@@ -10,7 +10,7 @@ public interface UserRepository extends JpaRepository<User, Long> {
 }
 ```
 
-You can use the <strong>ReactiveHibernateCrudRepository</a> interface in a reactive way
+You can use the <strong>ReactiveHibernateCrudRepository</strong> interface in a reactive way
 ```java
 public interface UserRepository extends ReactiveHibernateCrudRepository<User, Long> {
     

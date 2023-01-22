@@ -1,23 +1,19 @@
-package mbr.hibernate.reactive;
+package org.github.mbr.hibernate.reactive;
 
 import lombok.extern.slf4j.Slf4j;
-import mbr.hibernate.reactive.impl._JQL_MethodExecutorImpl;
-import mbr.hibernate.reactive.impl.annotations.RepositoryMethod;
+import org.github.mbr.hibernate.reactive.config.RepoInterfaceMetaData;
+import org.github.mbr.hibernate.reactive.impl._JQL_MethodExecutorImpl;
+import org.github.mbr.hibernate.reactive.impl.annotations.RepositoryMethod;
 import org.springframework.beans.BeansException;
-import org.springframework.beans.factory.config.AutowireCapableBeanFactory;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
-import org.springframework.context.ApplicationContext;
-import org.springframework.context.ApplicationContextAware;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
-import java.util.ArrayList;
-import java.util.List;
 
 @Slf4j
 public class ReactiveHibernateRepositoryImpl implements InvocationHandler {
-    private Class<? extends ReactiveHibernateCrudRepository<?,?>> repoClass;
+    private RepoInterfaceMetaData repoInterfaceMetaData;// Class<? extends ReactiveHibernateCrudRepository<?,?>> repoClass;
 
     //private IRepoScannedPackages scannedPackages;
     private Object runtimeImplementation;
@@ -26,21 +22,32 @@ public class ReactiveHibernateRepositoryImpl implements InvocationHandler {
         if (runtimeImplementation != null) {
             return runtimeImplementation;
         }
-        Object retval = Proxy.newProxyInstance(ReactiveHibernateRepositoryImpl.class.getClassLoader(),
-                new Class[]{repoClass}, this);
+/*        Class<?> newlyLoadedClass = null;
+        try{
+            newlyLoadedClass = this.classLoader.loadClass(repoInterfaceMetaData.repoInterfaceClass.getCanonicalName());
+        }catch (Exception e) {
+            log.error("CLASS-LOAD-ERR", e);
+            throw new IllegalCallerException(e);
+        }*/
+        Object retval = Proxy.newProxyInstance(this.getClass().getClassLoader(),
+                new Class[]{repoInterfaceMetaData.repoInterfaceClass}, this);
         runtimeImplementation = retval;
         return retval;
     }
 
+    /*
     public void bindInterface(Class<? extends ReactiveHibernateCrudRepository<?,?>> repoClass) {
         this.repoClass = repoClass;
     }
-
+     */
+    public void bindRepoInterfaceMetaData(RepoInterfaceMetaData repoInterfaceMetaData) {
+        this.repoInterfaceMetaData = repoInterfaceMetaData;
+    }
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
         RepositoryMethod repoMethodAnnotation = method.getAnnotation(RepositoryMethod.class);
         if(repoMethodAnnotation != null) {
-            return methodExecutor.execute(repoClass, method, args);
+            return methodExecutor.execute(repoInterfaceMetaData, method, args);
         }
         log.debug("method is default: {}", method.isDefault());
         throw new RuntimeException(method.getName() + " is not executable, is default: " + method.isDefault());
@@ -50,11 +57,17 @@ public class ReactiveHibernateRepositoryImpl implements InvocationHandler {
 
     public void setReactivePersistentUnitInfo(ReactivePersistentUnitInfo unitInfo) throws BeansException {
         methodExecutor = _JQL_MethodExecutorImpl.of(unitInfo);
+        log.debug("unitInfo-class-loader: {} {}", unitInfo.getClass().getClassLoader(), ReactivePersistentUnitInfo.class.getClassLoader());
     }
 
     public void setBeanFactory(ConfigurableListableBeanFactory bf) {
         Object impl = getProxiedImplementation();
-        bf.registerResolvableDependency(repoClass, impl);
-        log.info("[DAO-Repo] class: {} is registered", repoClass.getCanonicalName());
+        bf.registerResolvableDependency(repoInterfaceMetaData.repoInterfaceClass, impl);
+        log.info("[DAO-Repo] class: {} is registered", repoInterfaceMetaData.repoInterfaceClass.getCanonicalName());
+    }
+
+    @Override
+    public String toString() {
+        return "impl";
     }
 }

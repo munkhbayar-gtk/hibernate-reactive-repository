@@ -1,4 +1,4 @@
-package mbr.hibernate.reactive;
+package org.github.mbr.hibernate.reactive;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;

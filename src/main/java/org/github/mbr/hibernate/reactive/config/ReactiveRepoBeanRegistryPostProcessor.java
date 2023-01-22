@@ -1,10 +1,9 @@
-package mbr.hibernate.reactive.config;
+package org.github.mbr.hibernate.reactive.config;
 
 import lombok.extern.slf4j.Slf4j;
-import mbr.hibernate.reactive.ReactiveHibernateCrudRepository;
-import mbr.hibernate.reactive.ReactiveHibernateRepositoryImpl;
+import org.github.mbr.hibernate.reactive.ReactiveHibernateCrudRepository;
+import org.github.mbr.hibernate.reactive.config.annotations.ScanHibernateReactiveComponents;
 import org.reflections.Reflections;
-import org.reflections.scanners.SubTypesScanner;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 import org.springframework.beans.factory.support.BeanDefinitionRegistry;
@@ -13,8 +12,7 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 import org.springframework.context.annotation.Configuration;
 
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 import static org.reflections.scanners.Scanners.*;
@@ -23,7 +21,7 @@ import static org.reflections.scanners.Scanners.*;
 
 @Configuration
 public class ReactiveRepoBeanRegistryPostProcessor
-        implements BeanDefinitionRegistryPostProcessor {
+        implements BeanDefinitionRegistryPostProcessor, ApplicationContextAware {
 
     private RepoImplFactory factory;//ReactiveHibernateRepositoryImpl repoImpl;
     public ReactiveRepoBeanRegistryPostProcessor() {
@@ -45,16 +43,35 @@ public class ReactiveRepoBeanRegistryPostProcessor
         beanFactory.registerResolvableDependency(RepoImplFactory.class, factory);
     }
 
-    /*
-    @Override
+    //@Override
     public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
-        log.debug("repoImpl setApplicationContext");
-        //repoImpl.setApplicationContext(applicationContext);
+        Map<String, Object> beans = applicationContext.getBeansWithAnnotation(ScanHibernateReactiveComponents.class);
+        if(beans.isEmpty()){
+            throw new IllegalStateException("ScanHibernateReactiveComponents annotation not found");
+        }
+
+        List<String[]> _repositoryPackagesToScan = new ArrayList<>();
+        beans.forEach((k,v)->{
+            Class<?> compClass = v.getClass();
+            _repositoryPackagesToScan.add(new String[]{compClass.getPackageName()});
+
+            ScanHibernateReactiveComponents configAnnotation =
+                    compClass.getAnnotation(ScanHibernateReactiveComponents.class);
+            _repositoryPackagesToScan.add(configAnnotation.baseRepositoryPackages);
+        });
+
+        if(_repositoryPackagesToScan.isEmpty()) {
+            log.warn("ScanHibernateReactiveComponents.baseRepositoryPackages = [], empty");
+        }
+        _repositoryPackagesToScan.forEach((String[] arr)->{
+            repositoryPackagesToScan.addAll(List.of(arr));
+        });
     }
-     */
+
+    private List<String> repositoryPackagesToScan = new ArrayList<>();
     private List<Class<? extends ReactiveHibernateCrudRepository<?,?>>> repos() {
 
-        Reflections refs = new Reflections("mbr.demowebflux");
+        Reflections refs = new Reflections(repositoryPackagesToScan.toArray(new String[]{}));
         Set<Class<?>> subTypes =
                 refs.get(SubTypes.of(ReactiveHibernateCrudRepository.class).asClass());
 

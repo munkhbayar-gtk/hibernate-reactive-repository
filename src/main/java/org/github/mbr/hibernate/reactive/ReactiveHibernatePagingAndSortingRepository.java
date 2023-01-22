@@ -1,4 +1,4 @@
-package mbr.hibernate.reactive;
+package org.github.mbr.hibernate.reactive;
 
 public interface ReactiveHibernatePagingAndSortingRepository <E, ID>{
 }

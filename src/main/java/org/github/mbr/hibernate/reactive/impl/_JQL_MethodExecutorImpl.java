@@ -1,8 +1,10 @@
-package mbr.hibernate.reactive.impl;
+package org.github.mbr.hibernate.reactive.impl;
 
 import io.smallrye.mutiny.Uni;
 import lombok.extern.slf4j.Slf4j;
-import mbr.hibernate.reactive.ReactivePersistentUnitInfo;
+import org.github.mbr.hibernate.reactive.ReactivePersistentUnitInfo;
+import org.github.mbr.hibernate.reactive.config.EntityMetaData;
+import org.github.mbr.hibernate.reactive.config.RepoInterfaceMetaData;
 import org.hibernate.reactive.mutiny.Mutiny;
 
 import javax.persistence.Column;
@@ -40,51 +42,17 @@ public class _JQL_MethodExecutorImpl {
           impls.put("getStageSessionFactory", this::getStageSessionFactory);
 
      }
-     public final Object execute(Class<?> repoInterface, Method method, Object[] args) {
+     public final Object execute(RepoInterfaceMetaData metaData, Method method, Object[] args) {
           //method.getDeclaringClass().getGenericSuperclass()
+          EntityMetaData entityMetaData = metaData.getEntityMetaData();
+          Class<?> entityClass = entityMetaData.entityClass; //findEntityClass(repoInterface,method);
+          Class<?> idClass = entityMetaData.idClass; //findIdClass(repoInterface,method);
 
-          Class<?> entityClass = findEntityClass(repoInterface,method);
-          Class<?> idClass = findIdClass(repoInterface,method);
           String name = method.getName();
           return impls.get(name).execute(args, entityClass, idClass);
      };
 
-     private ParameterizedType find(Class<?> repoInterface, Method method) {
-          log.debug("method: {}", method.getName());
-          Class<?> repoClass = method.getDeclaringClass();
-          log.debug("method-class: {}", method.getDeclaringClass());
-          log.debug("method-obj: {}", repoInterface);
-          ParameterizedType parameterizedTypes = extractParameterizedTypes(repoInterface);
-          log.debug("method-param-types: {}", parameterizedTypes);
-          //AnnotatedType superType = repoClass.getAnnotatedInterfaces()[0];
-          //return (ParameterizedType) superType.getType();
-          //return (ParameterizedType)parameterizedTypes.get(0);
-          return parameterizedTypes;
-     }
-     private ParameterizedType extractParameterizedTypes(Class<?> repoInterface) {
-
-          Type[] parameterizedTypes = repoInterface.getGenericInterfaces();
-          for (Type parameterizedType : parameterizedTypes) {
-               if(parameterizedType instanceof ParameterizedType) {
-                    return ((ParameterizedType)parameterizedType);
-                    /*
-                    Type[] actualTypeArgs = ((ParameterizedType)parameterizedType).getActualTypeArguments();
-                    ret.addAll(Arrays.asList(actualTypeArgs));
-                     */
-               }
-          }
-          return null;
-     }
-     private Class<?> findEntityClass(Class<?> repoInterface, Method method) {
-          return (Class<?>)find(repoInterface, method).getActualTypeArguments()[0];//.getClass();
-     }
-     private Class<?> findIdClass(Class<?> repoInterface, Method method) {
-          return (Class<?>)find(repoInterface, method).getActualTypeArguments()[1];//.getClass();
-     }
-
-
      private Object findAll(Object[] args, Class<?> entityClass, Class<?> idClass) {
-
           /*
           Mutiny.SessionFactory sf = sessionFactory();
           CriteriaBuilder cb = sf.getCriteriaBuilder();
@@ -107,7 +75,6 @@ public class _JQL_MethodExecutorImpl {
           String idColName = getIdColumnName(entityClass);
           CriteriaQuery<?> query = q.q;
           query.where(q.root.get(idColName).in(idList));
-
           return q.executeWithSession((session -> session.createQuery(query).getResultList()));
      }
 
@@ -223,6 +190,13 @@ public class _JQL_MethodExecutorImpl {
      }
      private Field findByAnnotation(Field[] fields, Class<? extends Annotation> annotationClass) {
           for(Field f : fields) {
+
+               Annotation anno = f.getAnnotation(annotationClass);
+               if(anno != null) return f;
+
+               anno = f.getDeclaredAnnotation(annotationClass);
+               if(anno != null) return f;
+
                if(f.getAnnotatedType().isAnnotationPresent(annotationClass)){
                     return f;
                }

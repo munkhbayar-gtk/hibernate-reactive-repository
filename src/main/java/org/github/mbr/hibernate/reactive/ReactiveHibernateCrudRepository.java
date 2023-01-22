@@ -1,7 +1,7 @@
-package mbr.hibernate.reactive;
+package org.github.mbr.hibernate.reactive;
 
 import io.smallrye.mutiny.Uni;
-import mbr.hibernate.reactive.impl.annotations.RepositoryMethod;
+import org.github.mbr.hibernate.reactive.impl.annotations.RepositoryMethod;
 import org.hibernate.reactive.mutiny.Mutiny;
 import org.hibernate.reactive.stage.Stage;
 
@@ -9,7 +9,7 @@ import java.util.List;
 
 public interface ReactiveHibernateCrudRepository<E, ID> {
     @RepositoryMethod
-    Uni<List<E>> findAll();
+    wzUni<List<E>> findAll();
 
     @RepositoryMethod
     Uni<List<E>> findAllById(Iterable<? extends ID> ids);

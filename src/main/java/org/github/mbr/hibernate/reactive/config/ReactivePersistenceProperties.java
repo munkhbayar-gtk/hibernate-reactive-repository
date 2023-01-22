@@ -1,4 +1,4 @@
-package mbr.hibernate.reactive.config;
+package org.github.mbr.hibernate.reactive.config;
 
 
 import lombok.Getter;

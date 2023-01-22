@@ -1,8 +1,8 @@
-package mbr.hibernate.reactive.config;
+package org.github.mbr.hibernate.reactive.config;
 
 import lombok.extern.slf4j.Slf4j;
-import mbr.hibernate.reactive.ReactiveHibernateRepositoryImpl;
-import mbr.hibernate.reactive.ReactivePersistentUnitInfo;
+import org.github.mbr.hibernate.reactive.ReactivePersistentUnitInfo;
+import org.github.mbr.hibernate.reactive.config.annotations.ScanHibernateReactiveComponents;
 import org.hibernate.reactive.mutiny.Mutiny;
 import org.hibernate.reactive.provider.ReactivePersistenceProvider;
 import org.hibernate.reactive.stage.Stage;
@@ -35,10 +35,31 @@ public class ReactivePersistenceUnitBeanConfig {
 
 
     @Bean
-    public EntityManagerFactory emf(ReactivePersistenceProperties props) {
+    public EntityManagerFactory emf(ReactivePersistenceProperties props,
+                                    RepoImplFactory repoImplFactory,
+                                    ApplicationContext applicationContext) {
         log.debug("creating emf: {} {}", props.id(), props);
         Properties properties = hibernateProperties(props);
-        List<String> entityClasses = collectEntityClasses(props);
+
+        Map<String, Object> beans = applicationContext.getBeansWithAnnotation(ScanHibernateReactiveComponents.class);
+
+        List<String[]> entityPackagesToScan = new ArrayList<>();
+        List<String[]> repositoryPackagesToScan = new ArrayList<>();
+
+
+        if(!beans.isEmpty()){
+            beans.forEach((k,v)->{
+                ScanHibernateReactiveComponents configAnnotation =
+                        v.getClass().getAnnotation(ScanHibernateReactiveComponents.class);
+                repositoryPackagesToScan.add(configAnnotation.baseRepositoryPackages);
+                entityPackagesToScan.add(configAnnotation.baseEntitiesPackages);
+            });
+        }
+
+        List<String> entityClasses = collectEntityClasses(entityPackagesToScan);
+
+        //repoImplFactory.setRepositoryPackagesToScan(entityPackagesToScan);
+
         return new ReactivePersistenceProvider()
                 .createContainerEntityManagerFactory(persistenceUnitInfo(properties, entityClasses), properties);
     }
@@ -57,10 +78,15 @@ public class ReactivePersistenceUnitBeanConfig {
     public ReactivePersistentUnitInfo createPersistentUnitInfo(EntityManagerFactory emf,
                                                                Mutiny.SessionFactory mSessionFactory,
                                                                Stage.SessionFactory sSessionFactory,
-                                                               RepoImplFactory repoImplFactory
+                                                               RepoImplFactory repoImplFactory,
+                                                               ApplicationContext applicationContext
     ){
         ReactivePersistentUnitInfo ret = new ReactivePersistentUnitInfo(emf, mSessionFactory, sSessionFactory);
         repoImplFactory.setReactivePersistentUnitInfo(ret);
+
+        //Set<?> annos = applicationContext.findAllAnnotationsOnBean(null, ScanHibernateReactiveComponents.class, true);
+        //log.debug("annos: {}", annos);
+
         return ret;
     }
 
@@ -68,7 +94,7 @@ public class ReactivePersistenceUnitBeanConfig {
         Properties prop = new Properties();
         prop.putAll(props.getHibernateProperties());
 
-        log.debug("hb: {}", prop);
+        //log.debug("hb: {}", prop);
 
         props.getDataSource().forEach((k,v)->{
             if(Objects.equals("username", k)){
@@ -79,7 +105,7 @@ public class ReactivePersistenceUnitBeanConfig {
             prop.put("javax.persistence.jdbc."+k, v);
         });
         Map<String, String> ds = props.getDataSource();
-        log.debug("DataSource: {}", ds);
+        //log.debug("DataSource: {}", ds);
         if(ds != null) {
             prop.put("dialect", ds.getOrDefault("dialect", ""));
         }else{
@@ -89,15 +115,20 @@ public class ReactivePersistenceUnitBeanConfig {
         System.out.println(prop);
         return prop;
     }
-    private List<String> collectEntityClasses (ReactivePersistenceProperties props) {
-        Reflections refs = new Reflections("mbr");
+    private List<String> collectEntityClasses (List<String[]> entityPackages) {
+        List<String> packages = new ArrayList<>();
+        entityPackages.forEach((arr)->{
+            packages.addAll(List.of(arr));
+        });
+        Reflections refs = new Reflections(packages.toArray(new String[]{}));
+
         Set<Class<?>> annotatedEntities = refs.get(SubTypes.of(TypesAnnotated.with(Entity.class)).asClass());
 
         return annotatedEntities.stream()
                 .map(Class::getCanonicalName)
                 .collect(Collectors.toList());
     }
-    private static PersistenceUnitInfo persistenceUnitInfo(Properties properties, List<String> entityClasses) {
+    private PersistenceUnitInfo persistenceUnitInfo(Properties properties, List<String> entityClasses) {
         return new PersistenceUnitInfo() {
             @Override
             public String getPersistenceUnitName() {

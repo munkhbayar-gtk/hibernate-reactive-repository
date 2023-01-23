@@ -1,9 +1,9 @@
-package org.github.mbr.hibernate.reactive.config;
+package io.github.mbr.hibernate.reactive.config;
 
+import io.github.mbr.hibernate.reactive.ReactiveHibernateCrudRepository;
+import io.github.mbr.hibernate.reactive.ReactiveHibernateRepositoryImpl;
+import io.github.mbr.hibernate.reactive.ReactivePersistentUnitInfo;
 import lombok.extern.slf4j.Slf4j;
-import org.github.mbr.hibernate.reactive.ReactiveHibernateCrudRepository;
-import org.github.mbr.hibernate.reactive.ReactiveHibernateRepositoryImpl;
-import org.github.mbr.hibernate.reactive.ReactivePersistentUnitInfo;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 
 import java.util.ArrayList;

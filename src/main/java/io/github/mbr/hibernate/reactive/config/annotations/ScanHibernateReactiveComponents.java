@@ -1,4 +1,4 @@
-package org.github.mbr.hibernate.reactive.config.annotations;
+package io.github.mbr.hibernate.reactive.config.annotations;
 
 import org.springframework.stereotype.Component;
 

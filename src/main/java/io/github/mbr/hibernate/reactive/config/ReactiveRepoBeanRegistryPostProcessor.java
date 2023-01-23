@@ -1,8 +1,8 @@
-package org.github.mbr.hibernate.reactive.config;
+package io.github.mbr.hibernate.reactive.config;
 
+import io.github.mbr.hibernate.reactive.ReactiveHibernateCrudRepository;
 import lombok.extern.slf4j.Slf4j;
-import org.github.mbr.hibernate.reactive.ReactiveHibernateCrudRepository;
-import org.github.mbr.hibernate.reactive.config.annotations.ScanHibernateReactiveComponents;
+import io.github.mbr.hibernate.reactive.config.annotations.ScanHibernateReactiveComponents;
 import org.reflections.Reflections;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;

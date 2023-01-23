@@ -1,4 +1,4 @@
-package org.github.mbr.hibernate.reactive.impl;
+package io.github.mbr.hibernate.reactive.impl;
 
 interface _JQL_MethodImpl {
     Object execute(Object[] args,

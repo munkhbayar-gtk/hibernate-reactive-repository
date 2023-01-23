@@ -1,1 +1,1 @@
-org.springframework.boot.autoconfigure.EnableAutoConfiguration=org.github.mbr.hibernate.reactive.config.ReactivePersistenceUnitBeanConfig
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=ReactivePersistenceUnitBeanConfig

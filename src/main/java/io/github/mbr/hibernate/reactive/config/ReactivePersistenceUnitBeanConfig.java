@@ -1,13 +1,12 @@
-package org.github.mbr.hibernate.reactive.config;
+package io.github.mbr.hibernate.reactive.config;
 
+import io.github.mbr.hibernate.reactive.ReactivePersistentUnitInfo;
 import lombok.extern.slf4j.Slf4j;
-import org.github.mbr.hibernate.reactive.ReactivePersistentUnitInfo;
-import org.github.mbr.hibernate.reactive.config.annotations.ScanHibernateReactiveComponents;
+import io.github.mbr.hibernate.reactive.config.annotations.ScanHibernateReactiveComponents;
 import org.hibernate.reactive.mutiny.Mutiny;
 import org.hibernate.reactive.provider.ReactivePersistenceProvider;
 import org.hibernate.reactive.stage.Stage;
 import org.reflections.Reflections;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

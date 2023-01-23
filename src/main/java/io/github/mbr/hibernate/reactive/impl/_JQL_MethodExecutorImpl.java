@@ -1,11 +1,11 @@
-package org.github.mbr.hibernate.reactive.impl;
+package io.github.mbr.hibernate.reactive.impl;
 
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.converters.uni.UniReactorConverters;
 import lombok.extern.slf4j.Slf4j;
-import org.github.mbr.hibernate.reactive.ReactivePersistentUnitInfo;
-import org.github.mbr.hibernate.reactive.config.EntityMetaData;
-import org.github.mbr.hibernate.reactive.config.RepoInterfaceMetaData;
+import io.github.mbr.hibernate.reactive.ReactivePersistentUnitInfo;
+import io.github.mbr.hibernate.reactive.config.EntityMetaData;
+import io.github.mbr.hibernate.reactive.config.RepoInterfaceMetaData;
 import org.hibernate.reactive.mutiny.Mutiny;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;

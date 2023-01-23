@@ -1,13 +1,10 @@
-package org.github.mbr.hibernate.reactive;
+package io.github.mbr.hibernate.reactive;
 
-import io.smallrye.mutiny.Uni;
-import org.github.mbr.hibernate.reactive.impl.annotations.RepositoryMethod;
+import io.github.mbr.hibernate.reactive.impl.annotations.RepositoryMethod;
 import org.hibernate.reactive.mutiny.Mutiny;
 import org.hibernate.reactive.stage.Stage;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-
-import java.util.List;
 
 public interface ReactiveHibernateCrudRepository<E, ID> {
     @RepositoryMethod

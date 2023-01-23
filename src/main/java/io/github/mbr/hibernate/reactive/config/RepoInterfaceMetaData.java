@@ -1,7 +1,7 @@
-package org.github.mbr.hibernate.reactive.config;
+package io.github.mbr.hibernate.reactive.config;
 
+import io.github.mbr.hibernate.reactive.ReactiveHibernateCrudRepository;
 import lombok.extern.slf4j.Slf4j;
-import org.github.mbr.hibernate.reactive.ReactiveHibernateCrudRepository;
 
 import javax.persistence.Column;
 import javax.persistence.Id;

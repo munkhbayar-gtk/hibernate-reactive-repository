@@ -1,9 +1,9 @@
-package org.github.mbr.hibernate.reactive;
+package io.github.mbr.hibernate.reactive;
 
+import io.github.mbr.hibernate.reactive.impl._JQL_MethodExecutorImpl;
 import lombok.extern.slf4j.Slf4j;
-import org.github.mbr.hibernate.reactive.config.RepoInterfaceMetaData;
-import org.github.mbr.hibernate.reactive.impl._JQL_MethodExecutorImpl;
-import org.github.mbr.hibernate.reactive.impl.annotations.RepositoryMethod;
+import io.github.mbr.hibernate.reactive.config.RepoInterfaceMetaData;
+import io.github.mbr.hibernate.reactive.impl.annotations.RepositoryMethod;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 

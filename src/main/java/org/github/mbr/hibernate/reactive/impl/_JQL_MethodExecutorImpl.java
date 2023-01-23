@@ -1,11 +1,14 @@
 package org.github.mbr.hibernate.reactive.impl;
 
 import io.smallrye.mutiny.Uni;
+import io.smallrye.mutiny.converters.uni.UniReactorConverters;
 import lombok.extern.slf4j.Slf4j;
 import org.github.mbr.hibernate.reactive.ReactivePersistentUnitInfo;
 import org.github.mbr.hibernate.reactive.config.EntityMetaData;
 import org.github.mbr.hibernate.reactive.config.RepoInterfaceMetaData;
 import org.hibernate.reactive.mutiny.Mutiny;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import javax.persistence.Column;
 import javax.persistence.Id;
@@ -16,7 +19,7 @@ import javax.persistence.criteria.Root;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.*;
 import java.util.*;
-
+import static io.smallrye.mutiny.converters.uni.UniReactorConverters.*;
 @Slf4j
 
 public class _JQL_MethodExecutorImpl {
@@ -52,7 +55,17 @@ public class _JQL_MethodExecutorImpl {
           return impls.get(name).execute(args, entityClass, idClass);
      };
 
-     private Object findAll(Object[] args, Class<?> entityClass, Class<?> idClass) {
+     private Mono<?> to_Mono(Uni<?> uni) {
+          return uni.convert().with(toMono());
+     }
+     private Flux<?> to_FLux(Uni<?> uni) {
+          Mono<?> mono = uni.convert().with(UniReactorConverters.toMono());
+          return mono.flatMapMany((item)->{
+               List<?> list = (List<?>) item;
+               return Flux.fromIterable(list);
+          });
+     }
+     private Flux<?> findAll(Object[] args, Class<?> entityClass, Class<?> idClass) {
           /*
           Mutiny.SessionFactory sf = sessionFactory();
           CriteriaBuilder cb = sf.getCriteriaBuilder();
@@ -62,9 +75,11 @@ public class _JQL_MethodExecutorImpl {
           return sf.withSession(session -> session.createQuery(q).getResultList());
            */
           Q q = createQuery(entityClass);
-          return q.executeWithSession((session -> session.createQuery(q.q).getResultList()));
+          return to_FLux(
+                  q.executeWithSession((session -> session.createQuery(q.q).getResultList()))
+          );
      }
-     private Object findAllById(Object[] args, Class<?> entityClass, Class<?> idClass) {
+     private Flux<?> findAllById(Object[] args, Class<?> entityClass, Class<?> idClass) {
           Q q = createQuery(entityClass);
           //delete.where(cb.equal(root.get("C_ID"), user.getId()));
 
@@ -75,28 +90,37 @@ public class _JQL_MethodExecutorImpl {
           String idColName = getIdColumnName(entityClass);
           CriteriaQuery<?> query = q.q;
           query.where(q.root.get(idColName).in(idList));
-          return q.executeWithSession((session -> session.createQuery(query).getResultList()));
+          return to_FLux(
+                  q.executeWithSession((session -> session.createQuery(query).getResultList()))
+          );
      }
 
-     private Object findById(Object[] args, Class<?> entityClass, Class<?> idClass) {
+     private Mono<?> findById(Object[] args, Class<?> entityClass, Class<?> idClass) {
           Q q = createQuery(entityClass);
           //delete.where(cb.equal(root.get("C_ID"), user.getId()));
           String idColName = getIdColumnName(entityClass);
           CriteriaQuery<?> query = q.q;
           query.where(q.cb.equal(q.root.get(idColName), args[0]));
-          return q.executeWithSession((session -> session.createQuery(query).getSingleResult()));
+          return to_Mono(
+                  q
+                          .executeWithSession(
+                                  (session -> session.createQuery(query).getSingleResult()))
+          );
      }
-     private Object save(Object[] args, Class<?> entityClass, Class<?> idClass) {
+     private Mono<?> save(Object[] args, Class<?> entityClass, Class<?> idClass) {
           Object entity = args[0];
           Mutiny.SessionFactory sf = sessionFactory();
           Object idVal = getIdValue(entity, entityClass);
+
+          Uni<?> uni = null;
           if (idVal == null) {
-               return sf.withSession(session -> session.persist(entity).chain(session::flush).replaceWith(entity));
+               uni= sf.withSession(session -> session.persist(entity).chain(session::flush).replaceWith(entity));
           }
-          return sessionFactory().withSession(session->session.merge(entity).onItem().call(session::flush));
+          uni = sessionFactory().withSession(session->session.merge(entity).onItem().call(session::flush));
+          return to_Mono(uni);
      }
 
-     private Object saveAll(Object[] args, Class<?> entityClass, Class<?> idClass) {
+     private Flux<?> saveAll(Object[] args, Class<?> entityClass, Class<?> idClass) {
 
           List<Object> eList = new ArrayList<>();
           Iterable<?> entitiesIterator = (Iterable<?>) args[0];
@@ -104,18 +128,22 @@ public class _JQL_MethodExecutorImpl {
 
           Object[] entities = eList.toArray();
           Mutiny.SessionFactory sf = sessionFactory();
-          return sf.withSession(session -> session.persistAll(entities).chain(session::flush).replaceWith(entities));
+          return to_FLux(
+                  sf.withSession(session -> session.persistAll(entities).chain(session::flush).replaceWith(entities))
+          );
      }
-     private Object deleteById(Object[] args, Class<?> entityClass, Class<?> idClass) {
+     private Mono<?> deleteById(Object[] args, Class<?> entityClass, Class<?> idClass) {
           Object id = args[0];
           Q q = createDelete(entityClass);
 
           String idColName = getIdColumnName(entityClass);
           q.del.where(q.cb.equal(q.root.get(idColName), id));
 
-          return q.executeWithTransaction((session,tx) -> session.createQuery(q.del).executeUpdate());
+          return to_Mono(
+                  q.executeWithTransaction((session,tx) -> session.createQuery(q.del).executeUpdate())
+          );
      }
-     private Object deleteAllById(Object[] args, Class<?> entityClass, Class<?> idClass) {
+     private Mono<?> deleteAllById(Object[] args, Class<?> entityClass, Class<?> idClass) {
           Q q = createDelete(entityClass);
           //delete.where(cb.equal(root.get("C_ID"), user.getId()));
 
@@ -126,15 +154,19 @@ public class _JQL_MethodExecutorImpl {
           String idColName = getIdColumnName(entityClass);
           q.del.where(q.root.get(idColName).in(idList));
 
-          return q.executeWithTransaction((session, tx)->
-               session.createQuery(q.del).executeUpdate()
+          return to_Mono(
+                  q.executeWithTransaction((session, tx)->
+                          session.createQuery(q.del).executeUpdate()
+                  )
           );
      }
-     private Object deleteAll(Object[] args, Class<?> entityClass, Class<?> idClass) {
+     private Mono<?> deleteAll(Object[] args, Class<?> entityClass, Class<?> idClass) {
 
           Q q = createDelete(entityClass);
 
-          return q.executeWithTransaction((session, tx)->session.createQuery(q.del).executeUpdate());
+          return to_Mono(
+                  q.executeWithTransaction((session, tx)->session.createQuery(q.del).executeUpdate())
+          );
      }
      private Object getMutinySessionFactory(Object[] args, Class<?> entityClass, Class<?> idClass) {
           return persistentUnitInfo.getMutinySessionFactory();

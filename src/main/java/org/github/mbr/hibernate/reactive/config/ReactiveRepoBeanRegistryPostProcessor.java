@@ -43,7 +43,7 @@ public class ReactiveRepoBeanRegistryPostProcessor
         beanFactory.registerResolvableDependency(RepoImplFactory.class, factory);
     }
 
-    //@Override
+    @Override
     public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
         Map<String, Object> beans = applicationContext.getBeansWithAnnotation(ScanHibernateReactiveComponents.class);
         if(beans.isEmpty()){
@@ -66,6 +66,7 @@ public class ReactiveRepoBeanRegistryPostProcessor
         _repositoryPackagesToScan.forEach((String[] arr)->{
             repositoryPackagesToScan.addAll(List.of(arr));
         });
+        log.debug("repositoryPackagesToScan: {}", repositoryPackagesToScan);
     }
 
     private List<String> repositoryPackagesToScan = new ArrayList<>();

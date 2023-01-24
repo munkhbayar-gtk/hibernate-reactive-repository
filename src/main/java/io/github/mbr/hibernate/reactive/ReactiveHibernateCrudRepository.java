@@ -1,6 +1,9 @@
 package io.github.mbr.hibernate.reactive;
 
+import io.github.mbr.hibernate.reactive.data.Page;
+import io.github.mbr.hibernate.reactive.data.Pageable;
 import io.github.mbr.hibernate.reactive.impl.annotations.RepositoryMethod;
+import io.github.mbr.hibernate.reactive.impl.annotations.RepositoryPagedMethod;
 import org.hibernate.reactive.mutiny.Mutiny;
 import org.hibernate.reactive.stage.Stage;
 import reactor.core.publisher.Flux;
@@ -11,9 +14,16 @@ public interface ReactiveHibernateCrudRepository<E, ID> {
     //Uni<List<E>> findAll();
     Flux<E> findAll();
 
+    @RepositoryPagedMethod
+    Mono<Page<E>> findAll(Pageable pageable);
+
     @RepositoryMethod
     //Uni<List<E>> findAllById(Iterable<? extends ID> ids);
+
     Flux<E> findAllById(Iterable<? extends ID> ids);
+
+    @RepositoryPagedMethod
+    Mono<Page<E>> findAllById(Iterable<? extends ID> ids, Pageable pageable);
 
     @RepositoryMethod
     Mono<E> findById(ID id);

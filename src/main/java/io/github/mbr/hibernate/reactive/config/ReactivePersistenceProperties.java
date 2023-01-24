@@ -30,14 +30,28 @@ public class ReactivePersistenceProperties implements  InitializingBean {
 
     }
     private Map<String, String> datasource = new HashMap<>();
-    private JpaProps jpa = new JpaProps();
+
+    private Map<String, String> jpa = new HashMap<>();
+
+    //spring.jpa.properties.hibernate.SQL=debug => SQL=debug
+    //spring.jpa.hibernate.ddl-auto=create-drop => ddl-auto
+    public final Map<String, String> getJpaProperties(String key) {
+        Map<String, String> ret = new HashMap<>();
+        jpa.forEach((k,v)->{
+            if(k.startsWith(key)) {
+                String nKey = k.substring(key.length());
+                ret.put(nKey, v);
+            }
+        });
+        return ret;
+    }
+
+    //private JpaProps jpa = new JpaProps();
 
     public Map<String, String> getDataSource() {
         return datasource;
     }
-    public Map<String, String> getHibernateProperties() {
-        return jpa.hibernate();
-    }
+
 
     int id = 1;
     public int id() {
@@ -47,26 +61,5 @@ public class ReactivePersistenceProperties implements  InitializingBean {
     @Override
     public void afterPropertiesSet() throws Exception {
         log.debug("initialized: {}", this);
-    }
-
-    @Setter
-    @ToString
-    public static class JpaProps {
-        //properties
-        private Map<String, String> properties = new HashMap<>();
-        private Map<String, String> hibernate = new HashMap<>();
-
-        public final Map<String, String> hibernate() {
-            Map<String, String> ret = new HashMap<>();
-            properties.forEach((k,v)->{
-                if(Objects.equals(k.toLowerCase(), "hibernate")) {
-                    ret.put(k, v);
-                }
-            });
-            hibernate.forEach((k,v)->{
-                ret.put("hibernate." + k, v);
-            });
-            return ret;
-        }
     }
 }

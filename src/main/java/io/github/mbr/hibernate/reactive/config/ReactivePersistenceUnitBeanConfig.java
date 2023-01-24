@@ -92,27 +92,21 @@ public class ReactivePersistenceUnitBeanConfig {
 
     private Properties hibernateProperties(ReactivePersistenceProperties props) {
         Properties prop = new Properties();
-        prop.putAll(props.getHibernateProperties());
-
-        //log.debug("hb: {}", prop);
+        //prop.putAll(props.getHibernateProperties());
+        Map<String, String> hibernateProperties = props.getJpaProperties("hibernate.");
+        log.debug("hb: {}", hibernateProperties);
+        hibernateProperties.forEach((k,v)->{
+            prop.put("hibernate."+k, v);
+        });
+        Map<String, String> properties = props.getJpaProperties("properties.hibernate.");
+        log.debug("hb: {}", properties);
+        prop.putAll(properties);
 
         props.getDataSource().forEach((k,v)->{
-            if(Objects.equals("username", k)){
-                k = "user";
-            }else if(Objects.equals("driverClassName", k)){
-                k = "driver";
-            }
-            prop.put("javax.persistence.jdbc."+k, v);
+            prop.put("hibernate.connection."+k, v);
         });
-        Map<String, String> ds = props.getDataSource();
-        //log.debug("DataSource: {}", ds);
-        if(ds != null) {
-            prop.put("dialect", ds.getOrDefault("dialect", ""));
-        }else{
-            log.debug("No DataSource properties injected");
-        }
 
-        System.out.println(prop);
+        log.debug("properties: {}", prop);
         return prop;
     }
     private List<String> collectEntityClasses (List<String[]> entityPackages) {

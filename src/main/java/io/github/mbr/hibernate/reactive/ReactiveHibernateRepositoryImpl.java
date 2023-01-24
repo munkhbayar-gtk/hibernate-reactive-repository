@@ -1,6 +1,7 @@
 package io.github.mbr.hibernate.reactive;
 
 import io.github.mbr.hibernate.reactive.impl._JQL_MethodExecutorImpl;
+import io.github.mbr.hibernate.reactive.impl.annotations.RepositoryPagedMethod;
 import lombok.extern.slf4j.Slf4j;
 import io.github.mbr.hibernate.reactive.config.RepoInterfaceMetaData;
 import io.github.mbr.hibernate.reactive.impl.annotations.RepositoryMethod;
@@ -45,12 +46,7 @@ public class ReactiveHibernateRepositoryImpl implements InvocationHandler {
     }
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-        RepositoryMethod repoMethodAnnotation = method.getAnnotation(RepositoryMethod.class);
-        if(repoMethodAnnotation != null) {
-            return methodExecutor.execute(repoInterfaceMetaData, method, args);
-        }
-        log.debug("method is default: {}", method.isDefault());
-        throw new RuntimeException(method.getName() + " is not executable, is default: " + method.isDefault());
+        return  methodExecutor.execute(repoInterfaceMetaData, method, args);
         //return method.invoke();
     }
 

@@ -1,5 +1,9 @@
 package io.github.mbr.hibernate.reactive.impl;
 
+import io.github.mbr.hibernate.reactive.data.Page;
+import io.github.mbr.hibernate.reactive.data.Pageable;
+import io.github.mbr.hibernate.reactive.impl.annotations.RepositoryMethod;
+import io.github.mbr.hibernate.reactive.impl.annotations.RepositoryPagedMethod;
 import io.smallrye.mutiny.Uni;
 import io.smallrye.mutiny.converters.uni.UniReactorConverters;
 import lombok.extern.slf4j.Slf4j;
@@ -7,15 +11,14 @@ import io.github.mbr.hibernate.reactive.ReactivePersistentUnitInfo;
 import io.github.mbr.hibernate.reactive.config.EntityMetaData;
 import io.github.mbr.hibernate.reactive.config.RepoInterfaceMetaData;
 import org.hibernate.reactive.mutiny.Mutiny;
+import org.hibernate.reactive.stage.Stage;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.function.Tuple3;
 
 import javax.persistence.Column;
 import javax.persistence.Id;
-import javax.persistence.criteria.CriteriaBuilder;
-import javax.persistence.criteria.CriteriaDelete;
-import javax.persistence.criteria.CriteriaQuery;
-import javax.persistence.criteria.Root;
+import javax.persistence.criteria.*;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.*;
 import java.util.*;
@@ -29,6 +32,8 @@ public class _JQL_MethodExecutorImpl {
      }
      private ReactivePersistentUnitInfo persistentUnitInfo;
      private Map<String, _JQL_MethodImpl> impls = new HashMap<>();
+     private Map<String, _JQL_MethodImpl> implsOfPagedMethods = new HashMap<>();
+     //private MethodGraph methodGraph = new MethodGraph();
 
      private _JQL_MethodExecutorImpl(ReactivePersistentUnitInfo persistentUnitInfo) {
           this.persistentUnitInfo = persistentUnitInfo;
@@ -44,27 +49,127 @@ public class _JQL_MethodExecutorImpl {
           impls.put("getMutinySessionFactory", this::getMutinySessionFactory);
           impls.put("getStageSessionFactory", this::getStageSessionFactory);
 
+          implsOfPagedMethods.put("findAll", this::findAllPaged);
+          implsOfPagedMethods.put("findAllById", this::findAllByIdPaged);
+
      }
      public final Object execute(RepoInterfaceMetaData metaData, Method method, Object[] args) {
-          //method.getDeclaringClass().getGenericSuperclass()
           EntityMetaData entityMetaData = metaData.getEntityMetaData();
           Class<?> entityClass = entityMetaData.entityClass; //findEntityClass(repoInterface,method);
           Class<?> idClass = entityMetaData.idClass; //findIdClass(repoInterface,method);
-
           String name = method.getName();
-          return impls.get(name).execute(args, entityClass, idClass);
+
+          RepositoryMethod repoMethodAnnotation = method.getAnnotation(RepositoryMethod.class);
+          if(repoMethodAnnotation != null) {
+               return impls.get(name).execute(args, entityClass, idClass);
+          }
+          RepositoryPagedMethod repoPagedMethodAnnotation = method.getAnnotation(RepositoryPagedMethod.class);
+          if(repoPagedMethodAnnotation != null) {
+               return implsOfPagedMethods.get(name).execute(args, entityClass, idClass);
+          }
+
+          //Queried
+          log.debug("method is default: {}", method.isDefault());
+          throw new RuntimeException(method.getName() + " is not executable, is default: " + method.isDefault());
      };
 
-     private Mono<?> to_Mono(Uni<?> uni) {
+     private <T>Mono<T> to_Mono(Uni<T> uni) {
           return uni.convert().with(toMono());
      }
-     private Flux<?> to_FLux(Uni<?> uni) {
+     private <T>Flux<T> to_FLux(Uni<T> uni) {
           Mono<?> mono = uni.convert().with(UniReactorConverters.toMono());
           return mono.flatMapMany((item)->{
-               List<?> list = (List<?>) item;
+               List<T> list = (List<T>) item;
                return Flux.fromIterable(list);
           });
      }
+
+
+     private Mono<Page<?>> findAllPaged(Object[] args, Class<?> entityClass, Class<?> idClass) {
+          Pageable pageable = (Pageable) args[0];
+          /*
+          Mutiny.SessionFactory sf = sessionFactory();
+          CriteriaBuilder cb = sf.getCriteriaBuilder();
+          CriteriaQuery<?> q = cb.createQuery(entityClass);
+          //Root<?> root =
+          q.from(entityClass);
+          return sf.withSession(session -> session.createQuery(q).getResultList());
+           */
+          Q q = createQuery(entityClass);
+          CriteriaQuery<?> query = q.q;
+          CriteriaQuery<Long> countQuery = q.cb.createQuery(Long.class);
+          countQuery.select(q.cb.count(countQuery.from(entityClass)));
+
+          Mono<Long> countMono = to_Mono(
+                  q.sf.withSession((session -> session
+                          .createQuery(countQuery)
+                          .getSingleResult()))
+          );
+          Flux<?> resultFlux = to_FLux(
+                  q.executeWithSession(session -> session
+                          .createQuery(query)
+                          .setFirstResult(pageable.getPageNumber())
+                          .setMaxResults(pageable.getPageSize())
+                          .getResultList())
+          );
+
+          Mono<Integer> totalPagesMono = countMono.flatMap(count->{
+               int ttlPages = (int)(count / pageable.getPageSize()) + (count % pageable.getPageSize() == 0 ? 0:1);
+               return Mono.just(ttlPages);
+          });
+
+          Mono<Tuple3<Long,Integer,List<?>>> m = Mono.zip(countMono, totalPagesMono,resultFlux.collectList());
+          return m.flatMap((t)->{
+               Page<?> p = new Page<>(t.getT1(), t.getT2(), t.getT3());
+               return Mono.just(p);
+          });
+     }
+
+     private Mono<Page<?>> findAllByIdPaged(Object[] args, Class<?> entityClass, Class<?> idClass) {
+
+          Pageable pageable = (Pageable) args[1];
+
+          Q q = createQuery(entityClass);
+          //delete.where(cb.equal(root.get("C_ID"), user.getId()));
+
+          List<Object> idList = new ArrayList<>();
+          Iterable<?> ids = (Iterable<?>) args[0];
+          ids.forEach(idList::add);
+
+          String idColName = getIdColumnName(entityClass);
+          CriteriaQuery<?> query = q.q;
+          Predicate predicate = q.root.get(idColName).in(idList);
+          query.where(predicate);
+
+          CriteriaQuery<Long> countQuery = q.cb.createQuery(Long.class);
+          countQuery.select(q.cb.count(countQuery.from(entityClass))).where(predicate);
+
+          Mono<Long> countMono = to_Mono(
+                  q.sf.withSession((session -> session
+                          .createQuery(countQuery)
+                          .getSingleResult()))
+          );
+          Flux<?> resultFlux = to_FLux(
+                  q.executeWithSession(session -> session
+                          .createQuery(query)
+                          .setFirstResult(pageable.getPageNumber() * pageable.getPageSize())
+                          .setMaxResults(pageable.getPageSize())
+                          .getResultList())
+          );
+
+          Mono<Integer> totalPagesMono = countMono.flatMap(count->{
+               int ttlPages = (int)(count / pageable.getPageSize()) + (count % pageable.getPageSize() == 0 ? 0:1);
+               return Mono.just(ttlPages);
+          });
+
+          Mono<Tuple3<Long,Integer,List<?>>> m = Mono.zip(countMono, totalPagesMono,resultFlux.collectList());
+          return m.flatMap((t)->{
+               Page<?> p = new Page<>(t.getT1(), t.getT2(), t.getT3());
+               return Mono.just(p);
+          });
+
+     }
+
      private Flux<?> findAll(Object[] args, Class<?> entityClass, Class<?> idClass) {
           /*
           Mutiny.SessionFactory sf = sessionFactory();
@@ -94,6 +199,8 @@ public class _JQL_MethodExecutorImpl {
                   q.executeWithSession((session -> session.createQuery(query).getResultList()))
           );
      }
+
+
 
      private Mono<?> findById(Object[] args, Class<?> entityClass, Class<?> idClass) {
           Q q = createQuery(entityClass);
@@ -236,7 +343,7 @@ public class _JQL_MethodExecutorImpl {
           return null;
      }
 
-    private <T> Q createDelete(Class<T> entityClass) {
+     private <T> Q createDelete(Class<T> entityClass) {
           Mutiny.SessionFactory sf = sessionFactory();
           CriteriaBuilder cb = sf.getCriteriaBuilder();
           CriteriaDelete<T> delete = cb.createCriteriaDelete(entityClass);
@@ -282,4 +389,5 @@ public class _JQL_MethodExecutorImpl {
      private interface TxExecute {
           Uni<?> exec(Mutiny.Session session, Mutiny.Transaction tx);
      }
+
 }

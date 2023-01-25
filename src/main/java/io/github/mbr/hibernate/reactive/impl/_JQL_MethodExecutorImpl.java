@@ -1,7 +1,6 @@
 package io.github.mbr.hibernate.reactive.impl;
 
-import io.github.mbr.hibernate.reactive.data.Page;
-import io.github.mbr.hibernate.reactive.data.Pageable;
+import io.github.mbr.hibernate.reactive.data.jpql.Query;
 import io.github.mbr.hibernate.reactive.impl.annotations.RepositoryMethod;
 import io.github.mbr.hibernate.reactive.impl.annotations.RepositoryPagedMethod;
 import io.smallrye.mutiny.Uni;
@@ -11,10 +10,12 @@ import io.github.mbr.hibernate.reactive.ReactivePersistentUnitInfo;
 import io.github.mbr.hibernate.reactive.config.EntityMetaData;
 import io.github.mbr.hibernate.reactive.config.RepoInterfaceMetaData;
 import org.hibernate.reactive.mutiny.Mutiny;
-import org.hibernate.reactive.stage.Stage;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.util.function.Tuple3;
 
 import javax.persistence.Column;
 import javax.persistence.Id;
@@ -22,6 +23,8 @@ import javax.persistence.criteria.*;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.*;
 import java.util.*;
+import java.util.stream.Collectors;
+
 import static io.smallrye.mutiny.converters.uni.UniReactorConverters.*;
 @Slf4j
 
@@ -68,22 +71,107 @@ public class _JQL_MethodExecutorImpl {
                return implsOfPagedMethods.get(name).execute(args, entityClass, idClass);
           }
 
+          Query query = method.getAnnotation(Query.class);
+          if(query != null) {
+               return executeQuery(metaData, method,query.value(), args);
+          }
+
           //Queried
           log.debug("method is default: {}", method.isDefault());
           throw new RuntimeException(method.getName() + " is not executable, is default: " + method.isDefault());
      };
 
-     private <T>Mono<T> to_Mono(Uni<T> uni) {
-          return uni.convert().with(toMono());
+
+     private String getCountQuery(String jpql) {
+          return "SELECT COUNT(*) " + jpql;
      }
-     private <T>Flux<T> to_FLux(Uni<T> uni) {
-          Mono<?> mono = uni.convert().with(UniReactorConverters.toMono());
-          return mono.flatMapMany((item)->{
-               List<T> list = (List<T>) item;
-               return Flux.fromIterable(list);
+     private String getOrderQuery(String jpql, Sort sort) {
+          List<Sort.Order> orders = sort.get().collect(Collectors.toList());
+          if(orders.isEmpty()) return jpql;
+
+          StringBuilder sb = new StringBuilder();
+          sb.append(jpql).append(" ORDER BY ");
+          orders.forEach(order -> {
+               sb.append(order.getProperty()).append(" ").append(order.getDirection().name());
           });
+          return sb.substring(0, sb.length() - 1);
+     }
+     private boolean isPaged(Object [] args) {
+          if(args == null || args.length == 0) return false;
+          return args[args.length - 1] instanceof Pageable;
+     }
+     private Object executeAndReturnList(RepoInterfaceMetaData.QueryMethodMetaData metaData, String jpql, Object [] args){
+          Mutiny.SessionFactory sf = sessionFactory();
+          boolean paged =isPaged(args);
+          if(paged) {
+
+
+               Uni<Long> countUni = sf.withSession((session->{
+                    String countQuery = getCountQuery(jpql);
+                    Mutiny.Query<Long> query = createQuery(session, metaData, countQuery, args);
+                    return query.getSingleResult();
+               }));
+               Pageable pageable = (Pageable)args[args.length - 1];
+
+               Uni<?> resultUni = sf.withSession(session -> {
+                    Mutiny.Query<?> query = createQuery(session, metaData, getOrderQuery(jpql, pageable.getSort()), args);
+                    query
+                            .setFirstResult(pageable.getPageNumber() * pageable.getPageSize())
+                            .setMaxResults(pageable.getPageSize());
+
+                    return query.getResultList();
+               });
+
+               return Mono.zip(to_Mono(countUni), to_Mono(resultUni)).flatMap(tuple->{
+                    long count = tuple.getT1();
+                    List<?> list = (List<?>) tuple.getT2();
+                    return Mono.just(new PageImpl<>(list, pageable, count));
+               });
+
+          }
+
+          Uni<?> resultUni = sf.withSession(session -> {
+               Mutiny.Query<?> query = createQuery(session, metaData, jpql, args);
+               return query.getResultList();
+          });
+          if(metaData.isReturningFlux()){
+               return to_FLux(resultUni);
+          }
+          return to_Mono(resultUni);
      }
 
+     private <T>Mutiny.Query<T> createQuery(Mutiny.Session session, RepoInterfaceMetaData.QueryMethodMetaData metaData, String jpql, Object [] args) {
+          Mutiny.Query<T> query = session.createQuery(jpql);
+          String [] params = metaData.getParams();;
+          for (int i = 0; i < params.length; i++) {
+               Object param = args[i];
+               query.setParameter(params[i], param);
+          }
+          return query;
+     }
+     private Object executeQuery(RepoInterfaceMetaData repoInterfaceMetaData, Method method, String jpql, Object [] args){
+
+          RepoInterfaceMetaData.QueryMethodMetaData metaData = repoInterfaceMetaData.getQueryMethodMetaData(method);
+          if(metaData.isResultList()){
+               return executeAndReturnList(metaData, jpql, args);
+          }
+          Mutiny.SessionFactory sf = sessionFactory();
+          Uni<?> uni = sf.withSession(session -> {
+               Mutiny.Query<?> query = createQuery(session, metaData, jpql, args);
+               Uni<?> retval;
+               if(metaData.isSingleResult()) {
+                    retval = query.getSingleResult();
+               }else {
+                    retval = query.executeUpdate();
+               }
+               return retval;
+             //query.se
+          });
+          if(metaData.isSingleResult()){
+               return to_Mono(uni);
+          }
+          return to_Mono(uni).flatMap(obj->Mono.empty());
+     }
 
      private Mono<Page<?>> findAllPaged(Object[] args, Class<?> entityClass, Class<?> idClass) {
           Pageable pageable = (Pageable) args[0];
@@ -100,29 +188,66 @@ public class _JQL_MethodExecutorImpl {
           CriteriaQuery<Long> countQuery = q.cb.createQuery(Long.class);
           countQuery.select(q.cb.count(countQuery.from(entityClass)));
 
+          return getPagedResult(q,countQuery, query, pageable);
+
+     }
+
+     private Order order(CriteriaBuilder cb, Root<?> root, Sort.Order order) {
+          if(order.isAscending()) {
+               return cb.asc(root.get(order.getProperty()));
+          }
+          return cb.desc(root.get(order.getProperty()));
+     }
+
+     private Mono<Page<?>> _executeListResult(long count, Q q, CriteriaQuery<?> selectQuery, Pageable pageable){
+          Sort sort = pageable.getSort();
+          List<Order> orders = sort.get().map(order -> order(q.cb, q.root, order)).collect(Collectors.toList());
+          selectQuery.orderBy(orders);
+
+          Mono<?> resultMono = to_Mono(q.executeWithSession(session -> session
+                  .createQuery(selectQuery)
+                  .setFirstResult(pageable.getPageNumber() * pageable.getPageSize())
+                  .setMaxResults(pageable.getPageSize())
+                  .getResultList()));
+
+          return resultMono.flatMap((listObj)->{
+               List<?> list = (List<?>)listObj;
+               return Mono.just(new PageImpl<>(list, pageable, count));
+          });
+
+     }
+     private Mono<Page<?>> getPagedResult(Q q, CriteriaQuery<Long> countQuery, CriteriaQuery<?> selectQuery, Pageable pageable) {
           Mono<Long> countMono = to_Mono(
                   q.sf.withSession((session -> session
                           .createQuery(countQuery)
                           .getSingleResult()))
           );
-          Flux<?> resultFlux = to_FLux(
-                  q.executeWithSession(session -> session
-                          .createQuery(query)
-                          .setFirstResult(pageable.getPageNumber())
-                          .setMaxResults(pageable.getPageSize())
-                          .getResultList())
-          );
 
-          Mono<Integer> totalPagesMono = countMono.flatMap(count->{
-               int ttlPages = (int)(count / pageable.getPageSize()) + (count % pageable.getPageSize() == 0 ? 0:1);
-               return Mono.just(ttlPages);
+          return countMono.flatMap((count)->{
+               if(count > 0) {
+                    return _executeListResult(count, q, selectQuery, pageable);
+               }
+               return Mono.just(Page.empty());
           });
 
-          Mono<Tuple3<Long,Integer,List<?>>> m = Mono.zip(countMono, totalPagesMono,resultFlux.collectList());
-          return m.flatMap((t)->{
-               Page<?> p = new Page<>(t.getT1(), t.getT2(), t.getT3());
-               return Mono.just(p);
+          /*
+          Sort sort = pageable.getSort();
+          List<Order> orders = sort.get().map(order -> order(q.cb, q.root, order)).collect(Collectors.toList());
+          selectQuery.orderBy(orders);
+
+          Mono<?> resultMono = to_Mono(q.executeWithSession(session -> session
+                  .createQuery(selectQuery)
+                  .setFirstResult(pageable.getPageNumber() * pageable.getPageSize())
+                  .setMaxResults(pageable.getPageSize())
+                  .getResultList()));
+
+          return Mono.zip(countMono,resultMono).flatMap(tuple->{
+               long count = tuple.getT1();
+               List<?> list = (List<?>) tuple.getT2();
+               return Mono.just(new PageImpl<>(list, pageable, count));
           });
+
+           */
      }
 
      private Mono<Page<?>> findAllByIdPaged(Object[] args, Class<?> entityClass, Class<?> idClass) {
@@ -144,30 +269,7 @@ public class _JQL_MethodExecutorImpl {
           CriteriaQuery<Long> countQuery = q.cb.createQuery(Long.class);
           countQuery.select(q.cb.count(countQuery.from(entityClass))).where(predicate);
 
-          Mono<Long> countMono = to_Mono(
-                  q.sf.withSession((session -> session
-                          .createQuery(countQuery)
-                          .getSingleResult()))
-          );
-          Flux<?> resultFlux = to_FLux(
-                  q.executeWithSession(session -> session
-                          .createQuery(query)
-                          .setFirstResult(pageable.getPageNumber() * pageable.getPageSize())
-                          .setMaxResults(pageable.getPageSize())
-                          .getResultList())
-          );
-
-          Mono<Integer> totalPagesMono = countMono.flatMap(count->{
-               int ttlPages = (int)(count / pageable.getPageSize()) + (count % pageable.getPageSize() == 0 ? 0:1);
-               return Mono.just(ttlPages);
-          });
-
-          Mono<Tuple3<Long,Integer,List<?>>> m = Mono.zip(countMono, totalPagesMono,resultFlux.collectList());
-          return m.flatMap((t)->{
-               Page<?> p = new Page<>(t.getT1(), t.getT2(), t.getT3());
-               return Mono.just(p);
-          });
-
+          return getPagedResult(q,countQuery,query,pageable);
      }
 
      private Flux<?> findAll(Object[] args, Class<?> entityClass, Class<?> idClass) {
@@ -219,7 +321,7 @@ public class _JQL_MethodExecutorImpl {
           Mutiny.SessionFactory sf = sessionFactory();
           Object idVal = getIdValue(entity, entityClass);
 
-          Uni<?> uni = null;
+          Uni<?> uni;
           if (idVal == null) {
                uni= sf.withSession(session -> session.persist(entity).chain(session::flush).replaceWith(entity));
           }
@@ -369,7 +471,16 @@ public class _JQL_MethodExecutorImpl {
           ret.q = q;
           return ret;
      }
-
+     private <T>Mono<T> to_Mono(Uni<T> uni) {
+          return uni.convert().with(toMono());
+     }
+     private <T>Flux<T> to_FLux(Uni<T> uni) {
+          Mono<?> mono = uni.convert().with(UniReactorConverters.toMono());
+          return mono.flatMapMany((item)->{
+               List<T> list = (List<T>) item;
+               return Flux.fromIterable(list);
+          });
+     }
      private static class Q {
           Mutiny.SessionFactory sf;
           CriteriaBuilder cb;

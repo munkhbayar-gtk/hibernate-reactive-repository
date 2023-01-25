@@ -1,11 +1,11 @@
 package io.github.mbr.hibernate.reactive;
 
-import io.github.mbr.hibernate.reactive.data.Page;
-import io.github.mbr.hibernate.reactive.data.Pageable;
 import io.github.mbr.hibernate.reactive.impl.annotations.RepositoryMethod;
 import io.github.mbr.hibernate.reactive.impl.annotations.RepositoryPagedMethod;
 import org.hibernate.reactive.mutiny.Mutiny;
 import org.hibernate.reactive.stage.Stage;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 

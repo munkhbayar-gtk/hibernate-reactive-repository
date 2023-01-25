@@ -104,8 +104,6 @@ public class _JQL_MethodExecutorImpl {
           Mutiny.SessionFactory sf = sessionFactory();
           boolean paged =isPaged(args);
           if(paged) {
-
-
                Uni<Long> countUni = sf.withSession((session->{
                     String countQuery = getCountQuery(jpql);
                     Mutiny.Query<Long> query = createQuery(session, metaData, countQuery, args);

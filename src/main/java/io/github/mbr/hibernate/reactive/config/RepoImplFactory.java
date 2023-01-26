@@ -27,13 +27,13 @@ public class RepoImplFactory {
         this.repos.forEach(cl->{
             ReactiveHibernateRepositoryImpl impl = new ReactiveHibernateRepositoryImpl();
             //impl.bindInterface(cl);
-            impl.bindRepoInterfaceMetaData(createMetaData(cl));
+            impl.bindRepoInterfaceMetaData(createMetaData(cl, impl.getInvokersBinder()));
             impl.setBeanFactory(beanFactory);
             impls.add(impl);
         });
     };
 
-    private RepoInterfaceMetaData createMetaData(Class<? extends ReactiveHibernateCrudRepository<?,?>> repoInterfaceClass) {
-        return RepoInterfaceMetaData.of(repoInterfaceClass);
+    private RepoInterfaceMetaData createMetaData(Class<? extends ReactiveHibernateCrudRepository<?,?>> repoInterfaceClass, RepoInterfaceMetaData.IMethodInvokers invokers) {
+        return RepoInterfaceMetaData.of(repoInterfaceClass, invokers);
     }
 }

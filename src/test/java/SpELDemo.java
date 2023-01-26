@@ -17,9 +17,8 @@ public class SpELDemo {
         Car car = new Car("test-test-car");
 
         ExpressionParser parser = new SpelExpressionParser();
-        ParserContext ctx = new TemplateParserContext();
-
-        Expression exp = parser.parseExpression("This is expression: #{#car.name} #{#car.name.length()}", ctx);
+        TemplateParserContext ctx = new TemplateParserContext();
+        Expression exp = parser.parseExpression("This is expression: :car #{#car.name} #{#car.name.length()}", ctx);
         EvaluationContext eCtx = new StandardEvaluationContext();
         eCtx.setVariable("car", car);
         Object result = exp.getValue(eCtx);

@@ -9,6 +9,7 @@ import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 
 import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 
@@ -43,10 +44,12 @@ public class ReactiveHibernateRepositoryImpl implements InvocationHandler {
      */
     public void bindRepoInterfaceMetaData(RepoInterfaceMetaData repoInterfaceMetaData) {
         this.repoInterfaceMetaData = repoInterfaceMetaData;
+
     }
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-        return  methodExecutor.execute(repoInterfaceMetaData, method, args);
+        return repoInterfaceMetaData.invoke(proxy, method, args);
+        //return  methodExecutor.execute(repoInterfaceMetaData, method, args);
         //return method.invoke();
     }
 
@@ -65,5 +68,38 @@ public class ReactiveHibernateRepositoryImpl implements InvocationHandler {
     @Override
     public String toString() {
         return "impl";
+    }
+
+    public RepoInterfaceMetaData.IMethodInvokers getInvokersBinder () {
+        return new RepoInterfaceMetaData.IMethodInvokers() {
+            @Override
+            public RepoInterfaceMetaData.IMethodInvoker getRepositoryMethodInvoker() {
+                return methodExecutor.getRepositoryMethodInvoker();
+            }
+
+            @Override
+            public RepoInterfaceMetaData.IMethodInvoker getRepositoryPagedMethodInvoker() {
+                return methodExecutor.getRepositoryPagedMethodInvoker();
+            }
+
+            @Override
+            public RepoInterfaceMetaData.IMethodInvoker getQueryInvoker() {
+                return methodExecutor.getQueryInvoker();
+            }
+
+            @Override
+            public RepoInterfaceMetaData.IMethodInvoker getDefaultMethodInvoker() {
+                return new RepoInterfaceMetaData.IMethodInvoker() {
+                    @Override
+                    public Object invoke(RepoInterfaceMetaData repoInterfaceMetaData, Object proxy, Method method, Object[] args) {
+                        try {
+                            return method.invoke(ReactiveHibernateRepositoryImpl.this, args);
+                        } catch (Exception e) {
+                            throw new RuntimeException(e);
+                        }
+                    }
+                };
+            }
+        };
     }
 }

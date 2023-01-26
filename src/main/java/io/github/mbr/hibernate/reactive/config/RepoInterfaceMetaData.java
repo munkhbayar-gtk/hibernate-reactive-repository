@@ -3,10 +3,20 @@ package io.github.mbr.hibernate.reactive.config;
 import io.github.mbr.hibernate.reactive.ReactiveHibernateCrudRepository;
 import io.github.mbr.hibernate.reactive.data.jpql.Param;
 import io.github.mbr.hibernate.reactive.data.jpql.Query;
+import io.github.mbr.hibernate.reactive.impl.annotations.RepositoryMethod;
+import io.github.mbr.hibernate.reactive.impl.annotations.RepositoryPagedMethod;
 import lombok.Getter;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.util.Pair;
+import org.springframework.expression.EvaluationContext;
+import org.springframework.expression.Expression;
+import org.springframework.expression.ExpressionParser;
+import org.springframework.expression.ParserContext;
+import org.springframework.expression.spel.standard.SpelExpressionParser;
+import org.springframework.expression.spel.support.StandardEvaluationContext;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -18,6 +28,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 
@@ -26,14 +38,17 @@ public class RepoInterfaceMetaData {
     private EntityMetaData entityMetaData;
 
     private Map<Method, QueryMethodMetaData> queryMethodMetaDataMap = new HashMap<>();
+    private IMethodInvokers invokers;
 
-    public static RepoInterfaceMetaData of(Class<? extends ReactiveHibernateCrudRepository<?,?>> repoInterfaceClass) {
-        return new RepoInterfaceMetaData(repoInterfaceClass);
+    public static RepoInterfaceMetaData of(Class<? extends ReactiveHibernateCrudRepository<?,?>> repoInterfaceClass, IMethodInvokers invokers) {
+        return new RepoInterfaceMetaData(repoInterfaceClass, invokers);
     }
-    private RepoInterfaceMetaData(Class<? extends ReactiveHibernateCrudRepository<?,?>> repoInterfaceClass) {
+    private RepoInterfaceMetaData(Class<? extends ReactiveHibernateCrudRepository<?,?>> repoInterfaceClass, IMethodInvokers invokers) {
         this.repoInterfaceClass = repoInterfaceClass;
+        this.invokers = invokers;
         buildEntityMetaData();
-        buildQueryMethodMetaDatas();
+        //buildQueryMethodMetaDatas();
+        buildMethodMetaDatas();
     }
 
     private void buildEntityMetaData() {
@@ -43,6 +58,46 @@ public class RepoInterfaceMetaData {
         this.entityMetaData = new EntityMetaData(entityClass, idClass, idColName);
     }
 
+    private void buildMethodMetaDatas() {
+        List<Method> methods = new ArrayList<>();
+        methods.addAll(List.of(repoInterfaceClass.getMethods()));
+        methods.addAll(List.of(repoInterfaceClass.getDeclaredMethods()));
+
+        methods.forEach(method->{
+            if(isQueryMethod(method)){
+                QueryMethodMetaData metaData = createMetaData(method);
+                queryMethodMetaDataMap.put(method, metaData);
+                methodInvokerMap.put(method, _reg_queryInvoker());
+            }
+
+            RepositoryMethod repositoryMethod = method.getAnnotation(RepositoryMethod.class);
+            if(repositoryMethod != null) {
+                methodInvokerMap.put(method, _reg_RepositoryMethodInvoker());
+            }
+            RepositoryPagedMethod repositoryPagedMethod = method.getAnnotation(RepositoryPagedMethod.class);
+            if(repositoryPagedMethod != null) {
+                methodInvokerMap.put(method, _reg_positoryPagedMethodInvoker());
+            }
+
+            if(method.isDefault()) {
+                methodInvokerMap.put(method, _reg_defaultMethodInvoker());
+            }
+        });
+    }
+
+    private IMethodInvoker _reg_defaultMethodInvoker () {
+        return (repoInterfaceMetaData, proxy,method, args) -> invokers.getDefaultMethodInvoker().invoke(repoInterfaceMetaData, proxy, method,args);
+
+    }
+    private IMethodInvoker _reg_queryInvoker() {
+        return (repoInterfaceMetaData, proxy, method, args) -> invokers.getQueryInvoker().invoke(repoInterfaceMetaData, proxy, method,args);
+    }
+    private IMethodInvoker _reg_RepositoryMethodInvoker() {
+        return (repoInterfaceMetaData, proxy,method, args) -> invokers.getRepositoryMethodInvoker().invoke(repoInterfaceMetaData, proxy,  method,args);
+    }
+    private IMethodInvoker _reg_positoryPagedMethodInvoker() {
+        return (repoInterfaceMetaData, proxy,method, args) -> invokers.getRepositoryPagedMethodInvoker().invoke(repoInterfaceMetaData, proxy, method,args);
+    }
     private void buildQueryMethodMetaDatas(){
         List<Method> methods = new ArrayList<>();
         methods.addAll(List.of(repoInterfaceClass.getMethods()));
@@ -63,7 +118,9 @@ public class RepoInterfaceMetaData {
             throw new RuntimeException(toString(method) + " return type must be either Mono<T>, Flux<T>, or Mono<Page<T>> if pageable is present");
         }
         QueryMethodMetaData metaData = new QueryMethodMetaData();
-        metaData.params = extractParamNames(method);
+        Pair<String[], Class<?>[]> params = extractParamNamesAndTypes(method);
+        metaData.params = params.getFirst(); //extractParamNames(method);
+        metaData.paramTypes = params.getSecond();
 
         Type returnType = method.getGenericReturnType();
 
@@ -84,6 +141,9 @@ public class RepoInterfaceMetaData {
             throw new RuntimeException(toString(method) + " the last parameter must be Pageable");
         }
 
+        Query query = method.getAnnotation(Query.class);
+        metaData.rawQuery = query.value();
+        metaData.prepare();
         return metaData;
     }
 
@@ -113,9 +173,11 @@ public class RepoInterfaceMetaData {
         log.debug("raw-type-1: {} {}", clzz, ret);
         return ret;
     }
-    private String[] extractParamNames(Method method) {
+    private Pair<String[], Class<?>[]> extractParamNamesAndTypes(Method method) {
         Parameter[] params = method.getParameters();
-        List<String> ret = new ArrayList<>();
+        List<String> names = new ArrayList<>();
+        List<Class<?>> types = new ArrayList<>();
+
         //String[] ret = new String[params.length];
         for (int i = 0; i < params.length; i++) {
             if(isNonSqlParamType(params[i])){
@@ -126,9 +188,10 @@ public class RepoInterfaceMetaData {
             if(param != null) {
                 nm = param.value();
             }
-            ret.add(nm);
+            names.add(nm);
+            types.add(params[i].getType());
         }
-        return ret.toArray(new String[]{});
+        return Pair.of(names.toArray(new String[]{}), types.toArray(new Class[]{}));
     }
     private boolean isNonSqlParamType(Parameter p) {
         Class<?> type = p.getType();
@@ -222,19 +285,126 @@ public class RepoInterfaceMetaData {
         return queryMethodMetaDataMap.get(method);
     }
 
-    @Getter
+
     public static class QueryMethodMetaData {
+        @Setter
+        private String rawQuery;
+        @Setter
         private String[] params;
+        private Class<?>[] paramTypes;
+
+        @Getter
         private boolean isSingleResult;
+        @Getter
         private boolean isNoResult;
+        @Getter
         private boolean isListResult;
+        @Getter
         private boolean isReturningFlux;
 
+        @Getter
+        private String query;
+        private List<Map<String, String>> paramsExps;
+
+        void prepare() {
+
+            List<Map<String, String>> paramsExps = new ArrayList<>(params.length);
+            String sql = rawQuery;
+            for(String param : params) {
+
+                Pair<String, Map<String, String>> pair = createNmToExp(param, sql);
+                sql = pair.getFirst();
+                paramsExps.add(pair.getSecond());
+            }
+
+            this.query = sql;
+            this.paramsExps = paramsExps;
+        }
+
+        private Pair<String, Map<String, String>> createNmToExp(String paramName, String sql) {
+            //user_name -> #{#user.name}
+            Map<String, String> nmToExp = new HashMap<>();
+
+            //Pattern pattern = Pattern.compile("[:?](#\\{#user.[a-z,A-Z,0-9]+\\})");
+            Pattern p = Pattern.compile("[:?](#\\{#"+paramName+".[a-z,A-Z,0-9]+\\})");
+            Matcher m = p.matcher(sql);
+
+            String rSql = sql;
+            while(m.find()) {
+                 String exp = m.group(1);
+                 String expName = expToName(exp);
+                 nmToExp.put(expName, exp);
+
+                rSql = rSql.replace(":" + exp, ":" + expName);
+            }
+
+            return Pair.of(rSql, nmToExp);
+        }
+        Pattern EXP_NM = Pattern.compile("#\\{#(.*)\\}");
+        private String expToName(String exp) {
+            Matcher m = EXP_NM.matcher(exp);
+            if(m.find()) return m.group(1).replace(".", "_");
+            throw new RuntimeException("Unkown expression: " + exp);
+        }
         public boolean isResultList() {
             return isListResult;
         }
 
+        public Map<String, Object> getParamsBindings(Object[] args) {
+            Map<String, Object> retval = new HashMap<>();
 
+            for (int i = 0; i < params.length; i++) {
+                Map<String, Object> bindings = createBinding(i,args[i]);
+                retval.putAll(bindings);
+            }
+
+            return retval;
+        }
+
+        private Map<String, Object> createBinding(int idx, Object arg) {
+            Map<String, Object> retval = new HashMap<>();
+            Map<String, String> exp = paramsExps.get(idx);
+            String paramName = params[idx];
+
+            if(exp.isEmpty()) {
+                return Map.of(paramName, arg);
+            }
+
+            Class<?> paramType = paramTypes[idx];
+            exp.forEach((k,spel)->{
+                // k = user_name
+                // v = #{#}
+
+                Object actualValue = getSpelExpValue(spel, arg, paramName, paramType);
+                retval.put(k, actualValue);
+            });
+
+            return retval;
+        }
+        private Object getSpelExpValue(String spel, Object obj, String paramName, Class<?> paramType){
+            ExpressionParser parser = new SpelExpressionParser();
+            Expression exp = parser.parseExpression(spel, ParserContext.TEMPLATE_EXPRESSION); //"This is expression: :car #{#car.name} #{#car.name.length()}");
+            EvaluationContext eCtx = new StandardEvaluationContext();
+            eCtx.setVariable(paramName, obj);
+            return exp.getValue(eCtx);
+        }
     }
 
+    public Object invoke(Object proxy, Method method, Object [] args) {
+        IMethodInvoker invoker = methodInvokerMap.get(method);
+        return invoker.invoke(this, proxy, method,args);
+    }
+
+    private Map<Method, IMethodInvoker> methodInvokerMap = new HashMap<>();
+
+    public interface IMethodInvokers {
+        IMethodInvoker getRepositoryMethodInvoker();
+        IMethodInvoker getRepositoryPagedMethodInvoker();
+        IMethodInvoker getQueryInvoker();
+        IMethodInvoker getDefaultMethodInvoker();
+
+    }
+    public interface IMethodInvoker {
+        Object invoke(RepoInterfaceMetaData repoInterfaceMetaData, Object proxy, Method method, Object[] args);
+    }
 }

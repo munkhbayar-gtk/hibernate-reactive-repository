@@ -14,6 +14,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.data.repository.core.EntityMetadata;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -28,7 +29,7 @@ import java.util.stream.Collectors;
 import static io.smallrye.mutiny.converters.uni.UniReactorConverters.*;
 @Slf4j
 
-public class _JQL_MethodExecutorImpl {
+public class _JQL_MethodExecutorImpl implements RepoInterfaceMetaData.IMethodInvokers {
 
      public static _JQL_MethodExecutorImpl of(ReactivePersistentUnitInfo config) {
           return new _JQL_MethodExecutorImpl(config);
@@ -56,31 +57,6 @@ public class _JQL_MethodExecutorImpl {
           implsOfPagedMethods.put("findAllById", this::findAllByIdPaged);
 
      }
-     public final Object execute(RepoInterfaceMetaData metaData, Method method, Object[] args) {
-          EntityMetaData entityMetaData = metaData.getEntityMetaData();
-          Class<?> entityClass = entityMetaData.entityClass; //findEntityClass(repoInterface,method);
-          Class<?> idClass = entityMetaData.idClass; //findIdClass(repoInterface,method);
-          String name = method.getName();
-
-          RepositoryMethod repoMethodAnnotation = method.getAnnotation(RepositoryMethod.class);
-          if(repoMethodAnnotation != null) {
-               return impls.get(name).execute(args, entityClass, idClass);
-          }
-          RepositoryPagedMethod repoPagedMethodAnnotation = method.getAnnotation(RepositoryPagedMethod.class);
-          if(repoPagedMethodAnnotation != null) {
-               return implsOfPagedMethods.get(name).execute(args, entityClass, idClass);
-          }
-
-          Query query = method.getAnnotation(Query.class);
-          if(query != null) {
-               return executeQuery(metaData, method,query.value(), args);
-          }
-
-          //Queried
-          log.debug("method is default: {}", method.isDefault());
-          throw new RuntimeException(method.getName() + " is not executable, is default: " + method.isDefault());
-     };
-
 
      private String getCountQuery(String jpql) {
           return "SELECT COUNT(*) " + jpql;
@@ -104,15 +80,18 @@ public class _JQL_MethodExecutorImpl {
           Mutiny.SessionFactory sf = sessionFactory();
           boolean paged =isPaged(args);
           if(paged) {
+
+               Map<String, Object> bindings = metaData.getParamsBindings(args);
+
                Uni<Long> countUni = sf.withSession((session->{
                     String countQuery = getCountQuery(jpql);
-                    Mutiny.Query<Long> query = createQuery(session, metaData, countQuery, args);
+                    Mutiny.Query<Long> query = createQuery(session, bindings, countQuery);
                     return query.getSingleResult();
                }));
                Pageable pageable = (Pageable)args[args.length - 1];
 
                Uni<?> resultUni = sf.withSession(session -> {
-                    Mutiny.Query<?> query = createQuery(session, metaData, getOrderQuery(jpql, pageable.getSort()), args);
+                    Mutiny.Query<?> query = createQuery(session, bindings, getOrderQuery(jpql, pageable.getSort()));
                     query
                             .setFirstResult(pageable.getPageNumber() * pageable.getPageSize())
                             .setMaxResults(pageable.getPageSize());
@@ -138,18 +117,29 @@ public class _JQL_MethodExecutorImpl {
           return to_Mono(resultUni);
      }
 
-     private <T>Mutiny.Query<T> createQuery(Mutiny.Session session, RepoInterfaceMetaData.QueryMethodMetaData metaData, String jpql, Object [] args) {
+     private <T>Mutiny.Query<T> createQuery(Mutiny.Session session, Map<String, Object> bindings, String jpql) {
           Mutiny.Query<T> query = session.createQuery(jpql);
-          String [] params = metaData.getParams();;
+          bindings.forEach(query::setParameter);
+          return query;
+     }
+
+     private <T>Mutiny.Query<T> createQuery(Mutiny.Session session, RepoInterfaceMetaData.QueryMethodMetaData metaData, String jpql, Object [] args) {
+          Map<String, Object> bindings = metaData.getParamsBindings(args);
+          return createQuery(session, bindings, jpql);
+          /*
+          String [] params = metaData.getParams();
           for (int i = 0; i < params.length; i++) {
                Object param = args[i];
                query.setParameter(params[i], param);
           }
           return query;
+           */
      }
-     private Object executeQuery(RepoInterfaceMetaData repoInterfaceMetaData, Method method, String jpql, Object [] args){
+     private Object executeQuery(RepoInterfaceMetaData repoInterfaceMetaData, Object proxy, Method method, Object [] args){
 
           RepoInterfaceMetaData.QueryMethodMetaData metaData = repoInterfaceMetaData.getQueryMethodMetaData(method);
+          String jpql = metaData.getQuery();
+          log.debug("SQL: {}", jpql);
           if(metaData.isResultList()){
                return executeAndReturnList(metaData, jpql, args);
           }
@@ -479,6 +469,52 @@ public class _JQL_MethodExecutorImpl {
                return Flux.fromIterable(list);
           });
      }
+
+     @Override
+     public RepoInterfaceMetaData.IMethodInvoker getRepositoryMethodInvoker() {
+          return (repoMetaData, proxy, method, args)->{
+               EntityMetaData entityMetaData = repoMetaData.getEntityMetaData();
+               return impls.get(method.getName()).execute(args, entityMetaData.entityClass, entityMetaData.idClass);
+          };
+     }
+
+     @Override
+     public RepoInterfaceMetaData.IMethodInvoker getRepositoryPagedMethodInvoker() {
+          return (repoMetaData, proxy, method, args)->{
+               EntityMetaData entityMetaData = repoMetaData.getEntityMetaData();
+               return implsOfPagedMethods.get(method.getName()).execute(args, entityMetaData.entityClass, entityMetaData.idClass);
+          };
+     }
+
+     @Override
+     public RepoInterfaceMetaData.IMethodInvoker getQueryInvoker() {
+          return this::executeQuery;
+     }
+
+     @Override
+     public RepoInterfaceMetaData.IMethodInvoker getDefaultMethodInvoker() {
+          return null;
+     }
+
+     /*
+               RepositoryMethod repoMethodAnnotation = method.getAnnotation(RepositoryMethod.class);
+               if(repoMethodAnnotation != null) {
+                    return impls.get(name).execute(args, entityClass, idClass);
+               }
+               RepositoryPagedMethod repoPagedMethodAnnotation = method.getAnnotation(RepositoryPagedMethod.class);
+               if(repoPagedMethodAnnotation != null) {
+                    return implsOfPagedMethods.get(name).execute(args, entityClass, idClass);
+               }
+
+               Query query = method.getAnnotation(Query.class);
+               if(query != null) {
+                    return executeQuery(metaData, method, args);
+               }
+
+               //Queried
+               log.debug("method is default: {}", method.isDefault());
+               throw new RuntimeException(method.getName() + " is not executable, is default: " + method.isDefault());
+      */
      private static class Q {
           Mutiny.SessionFactory sf;
           CriteriaBuilder cb;

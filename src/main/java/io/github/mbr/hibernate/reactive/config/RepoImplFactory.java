@@ -4,6 +4,7 @@ import io.github.mbr.hibernate.reactive.ReactiveHibernateCrudRepository;
 import io.github.mbr.hibernate.reactive.ReactiveHibernateRepositoryImpl;
 import io.github.mbr.hibernate.reactive.ReactivePersistentUnitInfo;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 
 import java.util.ArrayList;
@@ -22,6 +23,7 @@ public class RepoImplFactory {
     }
     void createAndRegister(List<Class<? extends ReactiveHibernateCrudRepository<?,?>>> repos,
                            ConfigurableListableBeanFactory beanFactory){
+
         this.repos.addAll(repos);
         impls = new ArrayList<>(this.repos.size());
         this.repos.forEach(cl->{

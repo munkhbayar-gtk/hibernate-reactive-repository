@@ -395,6 +395,10 @@ public class RepoInterfaceMetaData {
         return invoker.invoke(this, proxy, method,args);
     }
 
+    public IMethodInvoker findMethodInvoker(Method method) {
+        return methodInvokerMap.get(method);
+    }
+
     private Map<Method, IMethodInvoker> methodInvokerMap = new HashMap<>();
 
     public interface IMethodInvokers {

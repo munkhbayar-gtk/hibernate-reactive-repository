@@ -8,6 +8,8 @@ import io.github.mbr.hibernate.reactive.impl.annotations.RepositoryMethod;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
 
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -48,7 +50,10 @@ public class ReactiveHibernateRepositoryImpl implements InvocationHandler {
     }
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
-        return repoInterfaceMetaData.invoke(proxy, method, args);
+        return repoInterfaceMetaData
+                .findMethodInvoker(method)
+                .invoke(repoInterfaceMetaData, proxy, method, args);
+        //return repoInterfaceMetaData.invoke(proxy, method, args);
         //return  methodExecutor.execute(repoInterfaceMetaData, method, args);
         //return method.invoke();
     }
@@ -70,6 +75,17 @@ public class ReactiveHibernateRepositoryImpl implements InvocationHandler {
         return "impl";
     }
 
+    private Object defaultMethodInvoke(Object proxy, Method method, Object[] args) throws Throwable {
+        return MethodHandles.lookup()
+                .findSpecial(
+                        method.getDeclaringClass(),
+                        method.getName(),
+                        MethodType.methodType(method.getReturnType(), new Class[0]),
+                        method.getDeclaringClass()
+                )
+                .bindTo(proxy)
+                .invokeWithArguments(args);
+    }
     public RepoInterfaceMetaData.IMethodInvokers getInvokersBinder () {
         return new RepoInterfaceMetaData.IMethodInvokers() {
             @Override
@@ -89,14 +105,11 @@ public class ReactiveHibernateRepositoryImpl implements InvocationHandler {
 
             @Override
             public RepoInterfaceMetaData.IMethodInvoker getDefaultMethodInvoker() {
-                return new RepoInterfaceMetaData.IMethodInvoker() {
-                    @Override
-                    public Object invoke(RepoInterfaceMetaData repoInterfaceMetaData, Object proxy, Method method, Object[] args) {
-                        try {
-                            return method.invoke(ReactiveHibernateRepositoryImpl.this, args);
-                        } catch (Exception e) {
-                            throw new RuntimeException(e);
-                        }
+                return (repoInterfaceMetaData, proxy, method, args) -> {
+                    try {
+                        return defaultMethodInvoke(proxy, method, args);
+                    } catch (Throwable e) {
+                        throw new RuntimeException(e);
                     }
                 };
             }

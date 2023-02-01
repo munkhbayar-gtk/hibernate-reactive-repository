@@ -28,10 +28,7 @@ import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.*;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -152,7 +149,36 @@ public class RepoInterfaceMetaData {
     }
 
     private boolean isNestTypePresent(Type returnType, Class<?>... clazz ) {
-        return isNestTypePresent(returnType,  0, clazz);
+        var cList = toGenericClassList(returnType);
+        if(cList.size() != clazz.length) return false;
+
+        for (int i = 0; i < cList.size(); i++) {
+            var clzz = cList.get(i);
+            var czz = clazz[i];
+            if(!isClzz(clzz, czz)){
+                return false;
+            }
+        }
+        return true;
+        //return isNestTypePresent(returnType,  0, clazz);
+    }
+    private List<Class<?>> toGenericClassList(Type type) {
+        List<Class<?>> ret = new ArrayList<>();
+        Queue<Type> q = new LinkedList<>();
+        q.offer(type);
+        while(!q.isEmpty()){
+            Type cType = q.poll();
+            if(cType instanceof ParameterizedType) {
+                var clzz = (Class<?>)((ParameterizedType) type).getRawType();
+                ret.add(clzz);
+                var pt = (ParameterizedType)type;
+                var types = pt.getActualTypeArguments();
+                for (Type aType : types) {
+                    q.offer(aType);
+                }
+            }
+        }
+        return ret;
     }
     private boolean isNestTypePresent(Type type, int idx, Class<?>... clazz) {
         if(idx >= clazz.length) return true;

@@ -61,7 +61,7 @@ public class ReactiveRepoBeanRegistryPostProcessor
         });
 
         if(_repositoryPackagesToScan.isEmpty()) {
-            log.warn("ScanHibernateReactiveComponents.baseRepositoryPackages = [], empty");
+            log.warn("ScanHibernateReactiveComponents.baseRepositoryPackages() = [], empty");
         }
         _repositoryPackagesToScan.forEach((String[] arr)->{
             repositoryPackagesToScan.addAll(List.of(arr));

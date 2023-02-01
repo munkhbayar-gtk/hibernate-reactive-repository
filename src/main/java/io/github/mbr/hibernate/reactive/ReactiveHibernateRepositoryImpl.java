@@ -1,5 +1,6 @@
 package io.github.mbr.hibernate.reactive;
 
+import io.github.mbr.hibernate.reactive.config.AbsMethodMetaData;
 import io.github.mbr.hibernate.reactive.impl._JQL_MethodExecutorImpl;
 import io.github.mbr.hibernate.reactive.impl.annotations.RepositoryPagedMethod;
 import lombok.extern.slf4j.Slf4j;
@@ -50,12 +51,20 @@ public class ReactiveHibernateRepositoryImpl implements InvocationHandler {
     }
     @Override
     public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+        log.debug("invoking method: {}, isDefault: {}",method.toString(), method.isDefault());
+        AbsMethodMetaData methodMetaData = (AbsMethodMetaData)repoInterfaceMetaData.getMethodMetaData(method);
+        RepoInterfaceMetaData.IMethodInvoker invoker = methodMetaData.getInvoker();
+        return invoker.invoke(repoInterfaceMetaData, proxy, methodMetaData, args);
+
+        /*
         return repoInterfaceMetaData
                 .findMethodInvoker(method)
-                .invoke(repoInterfaceMetaData, proxy, method, args);
+                .invoke(repoInterfaceMetaData, proxy, methodMetaData, args);
         //return repoInterfaceMetaData.invoke(proxy, method, args);
         //return  methodExecutor.execute(repoInterfaceMetaData, method, args);
         //return method.invoke();
+
+         */
     }
 
 
@@ -75,17 +84,7 @@ public class ReactiveHibernateRepositoryImpl implements InvocationHandler {
         return "impl";
     }
 
-    private Object defaultMethodInvoke(Object proxy, Method method, Object[] args) throws Throwable {
-        return MethodHandles.lookup()
-                .findSpecial(
-                        method.getDeclaringClass(),
-                        method.getName(),
-                        MethodType.methodType(method.getReturnType(), new Class[0]),
-                        method.getDeclaringClass()
-                )
-                .bindTo(proxy)
-                .invokeWithArguments(args);
-    }
+
     public RepoInterfaceMetaData.IMethodInvokers getInvokersBinder () {
         return new RepoInterfaceMetaData.IMethodInvokers() {
             @Override
@@ -105,13 +104,7 @@ public class ReactiveHibernateRepositoryImpl implements InvocationHandler {
 
             @Override
             public RepoInterfaceMetaData.IMethodInvoker getDefaultMethodInvoker() {
-                return (repoInterfaceMetaData, proxy, method, args) -> {
-                    try {
-                        return defaultMethodInvoke(proxy, method, args);
-                    } catch (Throwable e) {
-                        throw new RuntimeException(e);
-                    }
-                };
+                return methodExecutor.getDefaultMethodInvoker();
             }
         };
     }

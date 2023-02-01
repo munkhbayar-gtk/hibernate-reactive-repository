@@ -1,13 +1,21 @@
 package io.github.mbr.hibernate.reactive;
 
+import io.github.mbr.hibernate.reactive.data.GetAssociation;
+import io.github.mbr.hibernate.reactive.data.SetAssociation;
 import io.github.mbr.hibernate.reactive.impl.annotations.RepositoryMethod;
 import io.github.mbr.hibernate.reactive.impl.annotations.RepositoryPagedMethod;
+import io.smallrye.mutiny.Uni;
+import io.smallrye.mutiny.converters.uni.UniReactorConverters;
 import org.hibernate.reactive.mutiny.Mutiny;
 import org.hibernate.reactive.stage.Stage;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+
+import java.util.List;
+
+import static io.smallrye.mutiny.converters.uni.UniReactorConverters.toMono;
 
 public interface ReactiveHibernateCrudRepository<E, ID> {
     @RepositoryMethod
@@ -53,4 +61,26 @@ public interface ReactiveHibernateCrudRepository<E, ID> {
 
     @RepositoryMethod
     Stage.SessionFactory getStageSessionFactory();
+
+    default <T> Mono<Void> loadAssociations(GetAssociation<T> getter, SetAssociation<T> setter) {
+        var sf = getMutinySessionFactory();
+        var uni = sf.withStatelessSession(session->
+            session.fetch(getter.get())
+        );
+        return to_Mono(uni).flatMap(links->{
+            setter.set(links);
+            return Mono.empty();
+        });
+    }
+
+    default <T>Mono<T> to_Mono(Uni<T> uni) {
+        return uni.convert().with(toMono());
+    }
+    default <T>Flux<T> to_Flux(Uni<T> uni) {
+        Mono<?> mono = uni.convert().with(UniReactorConverters.toMono());
+        return mono.flatMapMany((item)->{
+            List<T> list = (List<T>) item;
+            return Flux.fromIterable(list);
+        });
+    }
 }

@@ -22,6 +22,9 @@ import javax.persistence.Column;
 import javax.persistence.Id;
 import javax.persistence.criteria.*;
 import java.lang.annotation.Annotation;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.*;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -135,11 +138,11 @@ public class _JQL_MethodExecutorImpl implements RepoInterfaceMetaData.IMethodInv
           return query;
            */
      }
-     private Object executeQuery(RepoInterfaceMetaData repoInterfaceMetaData, Object proxy, Method method, Object [] args){
+     private Object executeQuery(RepoInterfaceMetaData repoInterfaceMetaData, Object proxy, RepoInterfaceMetaData.MethodMetaData methodMetaData, Object [] args){
 
-          RepoInterfaceMetaData.QueryMethodMetaData metaData = repoInterfaceMetaData.getQueryMethodMetaData(method);
+          RepoInterfaceMetaData.QueryMethodMetaData metaData = (RepoInterfaceMetaData.QueryMethodMetaData)methodMetaData;//repoInterfaceMetaData.getQueryMethodMetaData(method);
           String jpql = metaData.getQuery();
-          log.debug("SQL: {}", jpql);
+          //log.debug("SQL: {}", jpql);
           if(metaData.isResultList()){
                return executeAndReturnList(metaData, jpql, args);
           }
@@ -206,6 +209,11 @@ public class _JQL_MethodExecutorImpl implements RepoInterfaceMetaData.IMethodInv
      }
      private Mono<Page<?>> getPagedResult(Q q, CriteriaQuery<Long> countQuery, CriteriaQuery<?> selectQuery, Pageable pageable) {
           Mono<Long> countMono = to_Mono(
+                  /*
+                  q.sf.withStatelessSession((session)->
+                          session.createQuery(countQuery).getSingleResult())
+
+                   */
                   q.sf.withSession((session -> session
                           .createQuery(countQuery)
                           .getSingleResult()))
@@ -297,11 +305,11 @@ public class _JQL_MethodExecutorImpl implements RepoInterfaceMetaData.IMethodInv
           //delete.where(cb.equal(root.get("C_ID"), user.getId()));
           String idColName = getIdColumnName(entityClass);
           CriteriaQuery<?> query = q.q;
-          query.where(q.cb.equal(q.root.get(idColName), args[0]));
+          //query.where(q.cb.equal(q.root.get(idColName), args[0]));
           return to_Mono(
                   q
                           .executeWithSession(
-                                  (session -> session.createQuery(query).getSingleResult()))
+                                  (session -> session.find(entityClass, args[0])))//createQuery(query).getSingleResult()))
           );
      }
      private Mono<?> save(Object[] args, Class<?> entityClass, Class<?> idClass) {
@@ -313,7 +321,7 @@ public class _JQL_MethodExecutorImpl implements RepoInterfaceMetaData.IMethodInv
           if (idVal == null) {
                uni= sf.withSession(session -> session.persist(entity).chain(session::flush).replaceWith(entity));
           }
-          uni = sessionFactory().withSession(session->session.merge(entity).onItem().call(session::flush));
+          uni = sf.withSession(session->session.merge(entity).onItem().call(session::flush));
           return to_Mono(uni);
      }
 
@@ -472,17 +480,19 @@ public class _JQL_MethodExecutorImpl implements RepoInterfaceMetaData.IMethodInv
 
      @Override
      public RepoInterfaceMetaData.IMethodInvoker getRepositoryMethodInvoker() {
-          return (repoMetaData, proxy, method, args)->{
+          return (repoMetaData, proxy, methodMetaData, args)->{
                EntityMetaData entityMetaData = repoMetaData.getEntityMetaData();
-               return impls.get(method.getName()).execute(args, entityMetaData.entityClass, entityMetaData.idClass);
+               String methodName = methodMetaData.getMethod().getName();
+               return impls.get(methodName).execute(args, entityMetaData.entityClass, entityMetaData.idClass);
           };
      }
 
      @Override
      public RepoInterfaceMetaData.IMethodInvoker getRepositoryPagedMethodInvoker() {
-          return (repoMetaData, proxy, method, args)->{
+          return (repoMetaData, proxy, methodMetaData, args)->{
                EntityMetaData entityMetaData = repoMetaData.getEntityMetaData();
-               return implsOfPagedMethods.get(method.getName()).execute(args, entityMetaData.entityClass, entityMetaData.idClass);
+               String methodName = methodMetaData.getMethod().getName();
+               return implsOfPagedMethods.get(methodName).execute(args, entityMetaData.entityClass, entityMetaData.idClass);
           };
      }
 
@@ -493,9 +503,31 @@ public class _JQL_MethodExecutorImpl implements RepoInterfaceMetaData.IMethodInv
 
      @Override
      public RepoInterfaceMetaData.IMethodInvoker getDefaultMethodInvoker() {
-          return null;
+          return (repoInterfaceMetaData, proxy, method, args) -> {
+               try {
+                    return defaultMethodInvoke(proxy, method, args);
+               } catch (Throwable e) {
+                    throw new RuntimeException(e);
+               }
+          };
      }
-
+     private Object defaultMethodInvoke(Object proxy, RepoInterfaceMetaData.MethodMetaData methodMetaData, Object[] args) throws Throwable {
+          MethodHandle methodHandle = ((RepoInterfaceMetaData.DefaultMethodMetaData)methodMetaData).getMethodHandle();
+          return methodHandle
+                  .bindTo(proxy)
+                  .invokeWithArguments(args);
+                  /*
+          return MethodHandles.lookup()
+                  .findSpecial(
+                          method.getDeclaringClass(),
+                          method.getName(),
+                          MethodType.methodType(method.getReturnType(), new Class[0]),
+                          method.getDeclaringClass()
+                  )
+                  .bindTo(proxy)
+                  .invokeWithArguments(args);
+                   */
+     }
      /*
                RepositoryMethod repoMethodAnnotation = method.getAnnotation(RepositoryMethod.class);
                if(repoMethodAnnotation != null) {

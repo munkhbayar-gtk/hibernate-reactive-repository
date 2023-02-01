@@ -1,6 +1,7 @@
 package io.github.mbr.hibernate.reactive.config;
 
 import io.github.mbr.hibernate.reactive.ReactiveHibernateCrudRepository;
+import io.github.mbr.hibernate.reactive.config.annotations.DefaultMethod;
 import io.github.mbr.hibernate.reactive.data.jpql.Param;
 import io.github.mbr.hibernate.reactive.data.jpql.Query;
 import io.github.mbr.hibernate.reactive.impl.annotations.RepositoryMethod;
@@ -23,6 +24,9 @@ import reactor.core.publisher.Mono;
 import javax.persistence.Column;
 import javax.persistence.Id;
 import java.lang.annotation.Annotation;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.*;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -32,12 +36,12 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Slf4j
-
 public class RepoInterfaceMetaData {
     public final Class<? extends ReactiveHibernateCrudRepository<?,?>> repoInterfaceClass;
     private EntityMetaData entityMetaData;
 
-    private Map<Method, QueryMethodMetaData> queryMethodMetaDataMap = new HashMap<>();
+
+    private Map<Method, MethodMetaData> methodMetaDataMap = new HashMap<>();
     private IMethodInvokers invokers;
 
     public static RepoInterfaceMetaData of(Class<? extends ReactiveHibernateCrudRepository<?,?>> repoInterfaceClass, IMethodInvokers invokers) {
@@ -65,22 +69,21 @@ public class RepoInterfaceMetaData {
 
         methods.forEach(method->{
             if(isQueryMethod(method)){
-                QueryMethodMetaData metaData = createMetaData(method);
-                queryMethodMetaDataMap.put(method, metaData);
-                methodInvokerMap.put(method, _reg_queryInvoker());
+                QueryMethodMetaData metaData = createMetaData(method, _reg_queryInvoker());
+                methodMetaDataMap.put(method, metaData);
             }
 
             RepositoryMethod repositoryMethod = method.getAnnotation(RepositoryMethod.class);
             if(repositoryMethod != null) {
-                methodInvokerMap.put(method, _reg_RepositoryMethodInvoker());
+                methodMetaDataMap.put(method, new RepositoryMethodMetaData(method, _reg_RepositoryMethodInvoker()));
             }
             RepositoryPagedMethod repositoryPagedMethod = method.getAnnotation(RepositoryPagedMethod.class);
             if(repositoryPagedMethod != null) {
-                methodInvokerMap.put(method, _reg_positoryPagedMethodInvoker());
+                methodMetaDataMap.put(method, new RepositoryMethodMetaData(method, _reg_positoryPagedMethodInvoker()));
             }
 
-            if(method.isDefault()) {
-                methodInvokerMap.put(method, _reg_defaultMethodInvoker());
+            if(method.isDefault() || method.isAnnotationPresent(DefaultMethod.class)) {
+                methodMetaDataMap.put(method,new DefaultMethodMetaData(method,_reg_defaultMethodInvoker()));
             }
         });
     }
@@ -98,6 +101,7 @@ public class RepoInterfaceMetaData {
     private IMethodInvoker _reg_positoryPagedMethodInvoker() {
         return (repoInterfaceMetaData, proxy,method, args) -> invokers.getRepositoryPagedMethodInvoker().invoke(repoInterfaceMetaData, proxy, method,args);
     }
+    /*
     private void buildQueryMethodMetaDatas(){
         List<Method> methods = new ArrayList<>();
         methods.addAll(List.of(repoInterfaceClass.getMethods()));
@@ -106,18 +110,18 @@ public class RepoInterfaceMetaData {
         methods.forEach(method->{
             if(isQueryMethod(method)){
                 QueryMethodMetaData metaData = createMetaData(method);
-                queryMethodMetaDataMap.put(method, metaData);
+                methodMetaDataMap.put(method, metaData);
             }
         });
     }
-
-    private QueryMethodMetaData createMetaData(Method method) {
+     */
+    private QueryMethodMetaData createMetaData(Method method, IMethodInvoker invoker) {
         log.debug("extracting method: {}", method.getName());
         Class<?> returnTypeClass = method.getReturnType();
         if(!isReactorType(returnTypeClass)){
             throw new RuntimeException(toString(method) + " return type must be either Mono<T>, Flux<T>, or Mono<Page<T>> if pageable is present");
         }
-        QueryMethodMetaData metaData = new QueryMethodMetaData();
+        QueryMethodMetaData metaData = new QueryMethodMetaData(method, invoker);
         Pair<String[], Class<?>[]> params = extractParamNamesAndTypes(method);
         metaData.params = params.getFirst(); //extractParamNames(method);
         metaData.paramTypes = params.getSecond();
@@ -281,12 +285,52 @@ public class RepoInterfaceMetaData {
         return null;
     }
 
-    public QueryMethodMetaData getQueryMethodMetaData(Method method) {
-        return queryMethodMetaDataMap.get(method);
+    public MethodMetaData getMethodMetaData(Method method) {
+        return methodMetaDataMap.get(method);
     }
 
+    public static class RepositoryMethodMetaData extends AbsMethodMetaData {
+        public RepositoryMethodMetaData(Method method, IMethodInvoker invoker) {
+            super(method, invoker);
+        }
+    }
 
-    public static class QueryMethodMetaData {
+    public static class DefaultMethodMetaData extends AbsMethodMetaData {
+        private MethodHandle handle;
+        public DefaultMethodMetaData(Method method, IMethodInvoker invoker) {
+            super(method, invoker);
+            MethodHandles.Lookup lookup = MethodHandles.lookup();
+            try{
+                this.handle = MethodHandles
+                        .privateLookupIn(method.getDeclaringClass(), lookup)
+                        .unreflectSpecial(method, method.getDeclaringClass());
+            }catch (Exception e) {
+                //findHandle2(method, e);
+                throw new RuntimeException(e);
+            }
+        }
+
+        private void findHandle2(Method method, Exception e) {
+            try {
+                this.handle = MethodHandles
+                        .lookup()
+                        .findSpecial(
+                                method.getDeclaringClass(),
+                                method.getName(),
+                                MethodType.methodType(method.getReturnType()),
+                                method.getDeclaringClass());
+            } catch (Exception ex) {
+                e.printStackTrace();
+                throw new RuntimeException(ex);
+            }
+        }
+
+        public MethodHandle getMethodHandle() {
+            return this.handle;
+        }
+    }
+
+    public static class QueryMethodMetaData extends AbsMethodMetaData{
         @Setter
         private String rawQuery;
         @Setter
@@ -305,6 +349,10 @@ public class RepoInterfaceMetaData {
         @Getter
         private String query;
         private List<Map<String, String>> paramsExps;
+
+        private QueryMethodMetaData(Method method, IMethodInvoker invoker) {
+            super(method, invoker);
+        }
 
         void prepare() {
 
@@ -388,15 +436,11 @@ public class RepoInterfaceMetaData {
             eCtx.setVariable(paramName, obj);
             return exp.getValue(eCtx);
         }
-    }
 
-    public Object invoke(Object proxy, Method method, Object [] args) {
-        IMethodInvoker invoker = methodInvokerMap.get(method);
-        return invoker.invoke(this, proxy, method,args);
-    }
-
-    public IMethodInvoker findMethodInvoker(Method method) {
-        return methodInvokerMap.get(method);
+        @Override
+        public Method getMethod() {
+            return null;
+        }
     }
 
     private Map<Method, IMethodInvoker> methodInvokerMap = new HashMap<>();
@@ -409,6 +453,11 @@ public class RepoInterfaceMetaData {
 
     }
     public interface IMethodInvoker {
-        Object invoke(RepoInterfaceMetaData repoInterfaceMetaData, Object proxy, Method method, Object[] args);
+        Object invoke(RepoInterfaceMetaData repoInterfaceMetaData, Object proxy, MethodMetaData metaData, Object[] args);
+    }
+
+    public interface MethodMetaData {
+        Method getMethod();
+        //IMethodInvoker getInvoker();
     }
 }

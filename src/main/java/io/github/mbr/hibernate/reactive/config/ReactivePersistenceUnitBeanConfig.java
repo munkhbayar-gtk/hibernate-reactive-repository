@@ -51,8 +51,8 @@ public class ReactivePersistenceUnitBeanConfig {
             beans.forEach((k,v)->{
                 ScanHibernateReactiveComponents configAnnotation =
                         v.getClass().getAnnotation(ScanHibernateReactiveComponents.class);
-                repositoryPackagesToScan.add(configAnnotation.baseRepositoryPackages);
-                entityPackagesToScan.add(configAnnotation.baseEntitiesPackages);
+                repositoryPackagesToScan.add(configAnnotation.baseRepositoryPackages());
+                entityPackagesToScan.add(configAnnotation.baseEntitiesPackages());
             });
         }
 

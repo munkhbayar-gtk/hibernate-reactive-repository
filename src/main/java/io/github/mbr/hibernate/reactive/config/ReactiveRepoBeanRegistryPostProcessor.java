@@ -57,7 +57,7 @@ public class ReactiveRepoBeanRegistryPostProcessor
 
             ScanHibernateReactiveComponents configAnnotation =
                     compClass.getAnnotation(ScanHibernateReactiveComponents.class);
-            _repositoryPackagesToScan.add(configAnnotation.baseRepositoryPackages);
+            _repositoryPackagesToScan.add(configAnnotation.baseRepositoryPackages());
         });
 
         if(_repositoryPackagesToScan.isEmpty()) {

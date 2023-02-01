@@ -2,18 +2,16 @@ package io.github.mbr.hibernate.reactive.config.annotations;
 
 import org.springframework.stereotype.Component;
 
-import java.lang.annotation.ElementType;
-import java.lang.annotation.Retention;
-import java.lang.annotation.RetentionPolicy;
-import java.lang.annotation.Target;
+import java.lang.annotation.*;
+
 import static java.lang.annotation.ElementType.*;
 @Target({TYPE})
 @Retention(RetentionPolicy.RUNTIME)
-@Component
+@Documented
 public @interface ScanHibernateReactiveComponents {
 
-    String baseRepositoryPackages[] = new String[]{};
-    String baseEntitiesPackages[] = new String[]{};
+    String[] baseRepositoryPackages() default {};
+    String[] baseEntitiesPackages() default {};
 
 
 }

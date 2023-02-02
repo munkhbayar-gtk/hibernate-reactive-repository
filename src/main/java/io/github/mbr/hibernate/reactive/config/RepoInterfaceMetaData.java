@@ -169,40 +169,20 @@ public class RepoInterfaceMetaData {
         while(!q.isEmpty()){
             Type cType = q.poll();
             if(cType instanceof ParameterizedType) {
-                var clzz = (Class<?>)((ParameterizedType) type).getRawType();
+                var clzz = (Class<?>)((ParameterizedType) cType).getRawType();
                 ret.add(clzz);
-                var pt = (ParameterizedType)type;
-                var types = pt.getActualTypeArguments();
-                for (Type aType : types) {
+                var parameterizedType = (ParameterizedType)cType;
+                var actualTypes = parameterizedType.getActualTypeArguments();
+                for (Type aType : actualTypes) {
                     q.offer(aType);
                 }
+            }else if(cType instanceof Class<?> clzz){
+                ret.add(clzz);
             }
         }
         return ret;
     }
-    private boolean isNestTypePresent(Type type, int idx, Class<?>... clazz) {
-        if(idx >= clazz.length) return true;
 
-        Class<?> clzz;
-        if(type instanceof ParameterizedType) {
-            clzz = (Class<?>)((ParameterizedType) type).getRawType();
-            if(!isClzz(clzz, clazz[idx])){
-                return false;
-            }
-            log.debug("raw-type-0: {}", clzz);
-            for(Type actualType : ((ParameterizedType) type).getActualTypeArguments()) {
-                boolean match = isNestTypePresent(actualType, idx + 1, clzz);
-                if(match) {
-                    return true;
-                }
-            }
-            //return false;
-        }
-        clzz = (Class<?>)type;
-        boolean ret = idx == clazz.length - 1 && isClzz(clzz, clazz[idx]);
-        log.debug("raw-type-1: {} {}", clzz, ret);
-        return ret;
-    }
     private Pair<String[], Class<?>[]> extractParamNamesAndTypes(Method method) {
         Parameter[] params = method.getParameters();
         List<String> names = new ArrayList<>();

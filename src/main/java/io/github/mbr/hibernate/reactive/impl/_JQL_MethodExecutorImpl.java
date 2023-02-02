@@ -151,7 +151,7 @@ public class _JQL_MethodExecutorImpl implements RepoInterfaceMetaData.IMethodInv
                Mutiny.Query<?> query = createQuery(session, metaData, jpql, args);
                Uni<?> retval;
                if(metaData.isSingleResult()) {
-                    retval = query.getSingleResult();
+                    retval = query.getSingleResultOrNull();//etSingleResult();
                }else {
                     retval = query.executeUpdate();
                }

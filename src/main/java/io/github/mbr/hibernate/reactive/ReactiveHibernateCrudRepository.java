@@ -62,14 +62,14 @@ public interface ReactiveHibernateCrudRepository<E, ID> {
     @RepositoryMethod
     Stage.SessionFactory getStageSessionFactory();
 
-    default <T> Mono<Void> loadAssociations(GetAssociation<T> getter, SetAssociation<T> setter) {
+    default <T> Mono<T> loadAssociations(GetAssociation<T> getter, SetAssociation<T> setter) {
         var sf = getMutinySessionFactory();
         var uni = sf.withStatelessSession(session->
             session.fetch(getter.get())
         );
         return to_Mono(uni).flatMap(links->{
             setter.set(links);
-            return Mono.empty();
+            return Mono.justOrEmpty(links);
         });
     }
 
